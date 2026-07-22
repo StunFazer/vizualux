@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VizuaLux Projector View</title>
+  <style>
+    body, html { 
+      margin: 0; 
+      padding: 0; 
+      width: 100%; 
+      height: 100%; 
+      background: #05040a; 
+      overflow: hidden; 
+      cursor: none; 
+      user-select: none;
+      font-family: 'Outfit', sans-serif;
+    }
+    
+    #interactive-container { 
+      position: absolute; 
+      top: 0; 
+      left: 0; 
+      width: 100vw; 
+      height: 100vh; 
+      z-index: 1; 
+    }
+    
+    .layer-canvas { 
+      position: absolute; 
+      top: 0; 
+      left: 0; 
+      width: 100%; 
+      height: 100%; 
+      pointer-events: none; 
+      opacity: 0;
+    }
+    .layer-canvas.active-canvas {
+      opacity: 1;
+    }
+    
+    #calibration-output-screen {
+      position: absolute; 
+      top: 0; 
+      left: 0; 
+      width: 100%; 
+      height: 100%;
+      background-color: #000000; 
+      background-image: 
+        linear-gradient(rgba(255, 255, 255, 0.95) 3.5px, transparent 3.5px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.95) 3.5px, transparent 3.5px);
+      background-size: 2.5% 2.5%;
+      z-index: 5; 
+      display: none; 
+      pointer-events: auto;
+    }
+
+    .focus-pattern {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+    
+    .corner-marker { 
+      display: none; 
+      position: absolute; 
+      width: 44px; 
+      height: 44px; 
+      border: 2px solid #ffffff;
+      border-radius: 50%;
+      background: rgba(13, 11, 28, 0.7);
+      box-shadow: 0 0 12px rgba(255, 255, 255, 0.4);
+      cursor: grab;
+      z-index: 100;
+      pointer-events: auto;
+      transform: translate(-50%, -50%);
+      transition: transform 0.15s;
+    }
+    
+    .corner-marker:hover {
+      transform: translate(-50%, -50%) scale(1.18);
+      box-shadow: 0 0 18px rgba(255, 255, 255, 0.7);
+    }
+    
+    .corner-marker::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+    }
+    
+    .corner-marker.top-left::after { background: #ef4444; }
+    .corner-marker.top-right::after { background: #3b82f6; }
+    .corner-marker.bottom-right::after { background: #f59e0b; }
+    .corner-marker.bottom-left::after { background: #10b981; }
+
+    /* Calibration patterns overlay */
+    .calibration-pattern-layer {
+      display: none;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    #calibration-output-screen.pattern-corners .calibration-pattern-layer.pattern-corners {
+      display: block;
+    }
+    #calibration-output-screen.pattern-grid .calibration-pattern-layer.pattern-grid {
+      display: block;
+    }
+    #calibration-output-screen.pattern-checkerboard .calibration-pattern-layer.pattern-checkerboard {
+      display: block;
+    }
+    #calibration-output-screen.pattern-circles .calibration-pattern-layer.pattern-circles,
+    #calibration-output-screen.pattern-autocalib .calibration-pattern-layer.pattern-autocalib,
+    #calibration-output-screen.pattern-white .calibration-pattern-layer.pattern-white {
+      display: block;
+    }
+
+    /* Override default projector background grid when other patterns are active */
+    #calibration-output-screen:not(.pattern-corners):not(.pattern-grid) {
+      background-image: none !important;
+    }
+  </style>
+</head>
+<body>
+  <script>
+    (function() {
+      function showErr(title, msg, stack) {
+        const div = document.createElement('div');
+        div.id = 'startup-error-banner';
+        div.style.position = 'fixed';
+        div.style.top = '0';
+        div.style.left = '0';
+        div.style.width = '100%';
+        div.style.background = '#ef4444';
+        div.style.color = '#ffffff';
+        div.style.padding = '24px';
+        div.style.zIndex = '999999';
+        div.style.fontFamily = 'monospace';
+        div.style.fontSize = '14px';
+        div.style.lineHeight = '1.6';
+        div.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
+        div.style.maxHeight = '50vh';
+        div.style.overflowY = 'auto';
+        div.innerHTML = '<h3 style="margin: 0 0 10px 0; font-size: 16px;">❌ ' + title + '</h3>' +
+                        '<div style="margin-bottom: 10px;"><b>Message:</b> ' + msg + '</div>' +
+                        (stack ? '<pre style="margin: 0; background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px; overflow-x: auto;">' + stack + '</pre>' : '');
+        document.body.appendChild(div);
+      }
+      window.addEventListener('error', function(e) {
+        showErr('Browser Runtime Error', e.message + ' at ' + e.filename + ':' + e.lineno + ':' + e.colno, e.error ? e.error.stack : 'N/A');
+      });
+      window.addEventListener('unhandledrejection', function(e) {
+        showErr('Promise Rejection Error', e.reason ? (e.reason.message || e.reason) : 'Unknown promise rejection', e.reason ? e.reason.stack : 'N/A');
+      });
+    })();
+  </script>
+  <div id="interactive-container">
+    <canvas id="projector-canvas-1" class="layer-canvas active-canvas"></canvas>
+    <canvas id="projector-canvas-2" class="layer-canvas"></canvas>
+    
+    <div id="calibration-output-screen" class="pattern-corners" style="display: none;">
+      <!-- Corners Pattern Overlay -->
+      <div class="calibration-pattern-layer pattern-corners">
+        <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <line x1="0" y1="0" x2="100" y2="100" stroke="#f472b6" stroke-width="2.2" />
+          <line x1="100" y1="0" x2="0" y2="100" stroke="#f472b6" stroke-width="2.2" />
+          <!-- Inward-facing L-bracket corners -->
+          <path d="M 0,10 L 0,0 L 10,0" fill="none" stroke="#ef4444" stroke-width="4.0" />
+          <path d="M 100,10 L 100,0 L 90,0" fill="none" stroke="#3b82f6" stroke-width="4.0" />
+          <path d="M 100,90 L 100,100 L 90,100" fill="none" stroke="#f59e0b" stroke-width="4.0" />
+          <path d="M 0,90 L 0,100 L 10,100" fill="none" stroke="#10b981" stroke-width="4.0" />
+        </svg>
+      </div>
+
+      <!-- Grid Pattern Overlay -->
+      <div class="calibration-pattern-layer pattern-grid">
+        <svg width="100%" height="100%">
+          <defs>
+            <pattern id="grid-pattern-svg-proj" width="40" height="40" patternUnits="userSpaceOnUse">
+              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#00ffcc" stroke-width="1.5"/>
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#grid-pattern-svg-proj)" />
+        </svg>
+      </div>
+
+      <!-- Contrast Checkerboard Layout -->
+      <div class="calibration-pattern-layer pattern-checkerboard">
+        <svg width="100%" height="100%">
+          <defs>
+            <pattern id="checkerboard-pattern-svg-proj" width="100" height="100" patternUnits="userSpaceOnUse">
+              <rect width="50" height="50" fill="#ffffff" />
+              <rect x="50" width="50" height="50" fill="#111111" />
+              <rect y="50" width="50" height="50" fill="#111111" />
+              <rect x="50" y="50" width="50" height="50" fill="#ffffff" />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#checkerboard-pattern-svg-proj)" />
+        </svg>
+      </div>
+
+      <!-- Concentric Focus Rings & Central Crosshairs Overlay -->
+      <div class="calibration-pattern-layer pattern-circles">
+        <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <line x1="0" y1="0" x2="100" y2="100" stroke="#f472b6" stroke-width="1.0" />
+          <line x1="100" y1="0" x2="0" y2="100" stroke="#f472b6" stroke-width="1.0" />
+          <circle cx="50" cy="50" r="5" fill="none" stroke="#00ffff" stroke-width="1.5" />
+          <circle cx="50" cy="50" r="10" fill="none" stroke="#00ffff" stroke-width="1.5" />
+          <circle cx="50" cy="50" r="15" fill="none" stroke="#00ffff" stroke-width="1.5" />
+          <circle cx="50" cy="50" r="20" fill="none" stroke="#00ffff" stroke-width="1.5" />
+          <circle cx="50" cy="50" r="25" fill="none" stroke="#00ffff" stroke-width="1.5" />
+          <circle cx="50" cy="50" r="30" fill="none" stroke="#00ffff" stroke-width="1.5" />
+          <circle cx="50" cy="50" r="35" fill="none" stroke="#00ffff" stroke-width="1.5" />
+          <circle cx="50" cy="50" r="40" fill="none" stroke="#00ffff" stroke-width="1.5" />
+          <line x1="50" y1="0" x2="50" y2="100" stroke="#00ffff" stroke-dasharray="1, 1" stroke-width="1.5" />
+          <line x1="0" y1="50" x2="100" y2="50" stroke="#00ffff" stroke-dasharray="1, 1" stroke-width="1.5" />
+        </svg>
+      </div>
+      
+      <!-- Auto Calibration Pattern Overlay -->
+      <div class="calibration-pattern-layer pattern-autocalib">
+        <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <circle id="autocalib-center-dot" cx="-50" cy="-50" r="3.5" fill="#ffffff" />
+          <circle id="autocalib-pulsing-ring" cx="-50" cy="-50" r="7" fill="none" stroke="#ffffff" stroke-width="0.6" opacity="0.8">
+            <animate attributeName="r" values="3.5;10;3.5" dur="1.5s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.8;0;0.8" dur="1.5s" repeatCount="indefinite" />
+          </circle>
+        </svg>
+      </div>
+
+      <!-- White Fullscreen Overlay -->
+      <div class="calibration-pattern-layer pattern-white" style="background-color: #ffffff;"></div>
+    </div>
+  </div>
+
+  <!-- Corner markers OUTSIDE the warped container so drag coordinates match screen coordinates -->
+  <div class="corner-marker top-left" data-index="0" id="warp-marker-0"></div>
+  <div class="corner-marker top-right" data-index="1" id="warp-marker-1"></div>
+  <div class="corner-marker bottom-right" data-index="2" id="warp-marker-2"></div>
+  <div class="corner-marker bottom-left" data-index="3" id="warp-marker-3"></div>
+
+  <script>
+    // Double click toggle fullscreen
+    window.addEventListener('dblclick', () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => console.log(err));
+      } else {
+        document.exitFullscreen();
+      }
+    });
+
+    window.renderResolutionScale = 1.0;
+
+    // 1. Draggable Projector Warp Controls
+    window.pins = [
+      {x: 0, y: 0},
+      {x: 1, y: 0},
+      {x: 1, y: 1},
+      {x: 0, y: 1}
+    ];
+
+    const markers = document.querySelectorAll('.corner-marker');
+    const calibScreen = document.getElementById('calibration-output-screen');
+
+    function safeGetItem(key) {
+      try {
+        return localStorage.getItem(key);
+      } catch (e) {
+        console.warn("Storage read blocked in projector view:", key, e);
+        return null;
+      }
+    }
+
+    function safeSetItem(key, value) {
+      try {
+        localStorage.setItem(key, value);
+      } catch (e) {
+        console.warn("Storage write blocked in projector view:", key, e);
+      }
+    }
+
+    function loadPins() {
+      const saved = safeGetItem('visualuxProjectorPins');
+      if (saved) {
+        try {
+          window.pins = JSON.parse(saved);
+        } catch (e) {
+          console.error("Failed to load projector pins:", e);
+        }
+      }
+    }
+
+    function savePins() {
+      safeSetItem('visualuxProjectorPins', JSON.stringify(window.pins));
+    }
+
+    function updateMarkerPositions() {
+      markers.forEach((m, idx) => {
+        m.style.left = (window.pins[idx].x * 100) + '%';
+        m.style.top = (window.pins[idx].y * 100) + '%';
+      });
+    }
+
+    // 2. 8x8 Gaussian solver for perspective correct matrix3d
+    function solveHomography(src, dst) {
+      let P = [];
+      for (let i = 0; i < 4; i++) {
+        P.push([
+          -src[i].x, -src[i].y, -1,
+          0, 0, 0,
+          src[i].x * dst[i].x, src[i].y * dst[i].x, -dst[i].x
+        ]);
+        P.push([
+          0, 0, 0,
+          -src[i].x, -src[i].y, -1,
+          src[i].x * dst[i].y, src[i].y * dst[i].y, -dst[i].y
+        ]);
+      }
+
+      for (let i = 0; i < 8; i++) {
+        let maxRow = i;
+        for (let j = i + 1; j < 8; j++) {
+          if (Math.abs(P[j][i]) > Math.abs(P[maxRow][i])) {
+            maxRow = j;
+          }
+        }
+        let temp = P[i];
+        P[i] = P[maxRow];
+        P[maxRow] = temp;
+
+        let pivot = P[i][i];
+        if (Math.abs(pivot) < 1e-10) {
+          return [1, 0, 0, 0, 1, 0, 0, 0, 1]; // Return identity
+        }
+        
+        for (let j = i; j < 9; j++) {
+          P[i][j] /= pivot;
+        }
+
+        for (let j = 0; j < 8; j++) {
+          if (i !== j) {
+            let factor = P[j][i];
+            for (let k = i; k < 9; k++) {
+              P[j][k] -= factor * P[i][k];
+            }
+          }
+        }
+      }
+
+      return [
+        P[0][8], P[1][8], P[2][8],
+        P[3][8], P[4][8], P[5][8],
+        P[6][8], P[7][8], 1
+      ];
+    }
+
+    function updateWarp() {
+      const W = window.innerWidth;
+      const H = window.innerHeight;
+      
+      const src = [
+        {x: 0, y: 0},
+        {x: W, y: 0},
+        {x: W, y: H},
+        {x: 0, y: H}
+      ];
+      
+      const dst = [
+        {x: window.pins[0].x * W, y: window.pins[0].y * H},
+        {x: window.pins[1].x * W, y: window.pins[1].y * H},
+        {x: window.pins[2].x * W, y: window.pins[2].y * H},
+        {x: window.pins[3].x * W, y: window.pins[3].y * H}
+      ];
+      
+      const h = solveHomography(src, dst);
+      const container = document.getElementById('interactive-container');
+      container.style.transformOrigin = '0 0';
+      container.style.transform = `matrix3d(
+        ${h[0]}, ${h[3]}, 0, ${h[6]},
+        ${h[1]}, ${h[4]}, 0, ${h[7]},
+        0, 0, 1, 0,
+        ${h[2]}, ${h[5]}, 0, ${h[8]}
+      )`;
+    }
+
+    // 3. Mouse & Touch handlers for calibration corners
+    let activePoint = null;
+    markers.forEach((m) => {
+      m.addEventListener('mousedown', (e) => {
+        activePoint = parseInt(e.target.getAttribute('data-index'));
+        e.target.style.cursor = 'grabbing';
+      });
+      m.addEventListener('touchstart', (e) => {
+        activePoint = parseInt(e.target.getAttribute('data-index'));
+      });
+    });
+
+    let warpUpdatePending = false;
+    function requestWarpUpdate() {
+      if (!warpUpdatePending) {
+        warpUpdatePending = true;
+        requestAnimationFrame(() => {
+          updateMarkerPositions();
+          updateWarp();
+          savePins();
+          warpUpdatePending = false;
+        });
+      }
+    }
+
+    const handleMove = (clientX, clientY) => {
+      if (activePoint === null) return;
+      const x = Math.max(0, Math.min(1, clientX / window.innerWidth));
+      const y = Math.max(0, Math.min(1, clientY / window.innerHeight));
+      window.pins[activePoint] = {x, y};
+      requestWarpUpdate();
+    };
+
+    document.addEventListener('mousemove', (e) => {
+      handleMove(e.clientX, e.clientY);
+    });
+
+    document.addEventListener('touchmove', (e) => {
+      if (activePoint !== null) {
+        const touch = e.touches[0];
+        handleMove(touch.clientX, touch.clientY);
+      }
+    });
+
+    const stopDragging = () => {
+      if (activePoint !== null) {
+        markers[activePoint].style.cursor = 'grab';
+        activePoint = null;
+      }
+    };
+    document.addEventListener('mouseup', stopDragging);
+    document.addEventListener('touchend', stopDragging);
+
+    // Watch resize
+    window.addEventListener('resize', () => {
+      const scale = window.renderResolutionScale || 1.0;
+      const c1 = document.getElementById('projector-canvas-1');
+      const c2 = document.getElementById('projector-canvas-2');
+      if (c1) { c1.width = Math.round(window.innerWidth * scale); c1.height = Math.round(window.innerHeight * scale); }
+      if (c2) { c2.width = Math.round(window.innerWidth * scale); c2.height = Math.round(window.innerHeight * scale); }
+      updateWarp();
+    });
+
+    window.updateResolutionScale = function(scale) {
+      window.renderResolutionScale = scale;
+      const c1 = document.getElementById('projector-canvas-1');
+      const c2 = document.getElementById('projector-canvas-2');
+      if (c1) { c1.width = Math.round(window.innerWidth * scale); c1.height = Math.round(window.innerHeight * scale); }
+      if (c2) { c2.width = Math.round(window.innerWidth * scale); c2.height = Math.round(window.innerHeight * scale); }
+      updateWarp();
+      window.dispatchEvent(new Event('resize'));
+    };
+
+    // Auto toggle cursor and corner markers when calibration screen displays
+    let lastDisplayState = null;
+    const observer = new MutationObserver(() => {
+      const isVisible = calibScreen.style.display === 'block';
+      if (isVisible === lastDisplayState) return;
+      lastDisplayState = isVisible;
+      if (isVisible) {
+        document.body.style.cursor = 'auto';
+      } else {
+        document.body.style.cursor = 'none';
+      }
+      markers.forEach(m => {
+        m.style.display = isVisible ? 'block' : 'none';
+      });
+    });
+    observer.observe(calibScreen, { attributes: true, attributeFilter: ['style'] });
+
+    window.updateMarkerPositions = updateMarkerPositions;
+    window.updateWarp = updateWarp;
+    window.triggerTransition = function(activeIdx) {
+      const c1 = document.getElementById('projector-canvas-1');
+      const c2 = document.getElementById('projector-canvas-2');
+      if (activeIdx === 1) {
+        if (c1) c1.classList.add('active-canvas');
+        if (c2) c2.classList.remove('active-canvas');
+      } else {
+        if (c2) c2.classList.add('active-canvas');
+        if (c1) c1.classList.remove('active-canvas');
+      }
+    };
+
+    window.showAutoCalibTarget = function(step) {
+      const dot = document.getElementById('autocalib-center-dot');
+      const ring = document.getElementById('autocalib-pulsing-ring');
+      if (!dot || !ring) return;
+      
+      let cx = -50, cy = -50;
+      if (step === 1) { cx = 5; cy = 5; }      // Top Left
+      else if (step === 2) { cx = 95; cy = 5; }  // Top Right
+      else if (step === 3) { cx = 95; cy = 95; } // Bottom Right
+      else if (step === 4) { cx = 5; cy = 95; }  // Bottom Left
+      
+      dot.setAttribute('cx', cx.toString());
+      dot.setAttribute('cy', cy.toString());
+      ring.setAttribute('cx', cx.toString());
+      ring.setAttribute('cy', cy.toString());
+    };
+
+    // Initialize
+    loadPins();
+    const c1 = document.getElementById('projector-canvas-1');
+    const c2 = document.getElementById('projector-canvas-2');
+    const scale = window.renderResolutionScale || 1.0;
+    if (c1) { c1.width = Math.round(window.innerWidth * scale); c1.height = Math.round(window.innerHeight * scale); }
+    if (c2) { c2.width = Math.round(window.innerWidth * scale); c2.height = Math.round(window.innerHeight * scale); }
+    updateMarkerPositions();
+    updateWarp();
+
+    // Notify the parent dashboard that the projector is ready
+    if (window.opener && typeof window.opener.onProjectorReady === 'function') {
+      window.opener.onProjectorReady(window);
+    }
+  </script>
+</body>
+</html>

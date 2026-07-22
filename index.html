@@ -1,0 +1,752 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VizuaLux - Interactive Projection Hub</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/src/style.css" />
+    <!-- MediaPipe Dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  </head>
+  <body>
+    <!-- Background Ambient Dust Canvas -->
+    <canvas id="ambient-canvas"></canvas>
+
+    <!-- Global Error Catcher overlay for visual debugging of any startup crashes -->
+    <script>
+      (function() {
+        function showErr(title, msg, stack) {
+          const div = document.createElement('div');
+          div.id = 'startup-error-banner';
+          div.style.position = 'fixed';
+          div.style.top = '0';
+          div.style.left = '0';
+          div.style.width = '100%';
+          div.style.background = '#ef4444';
+          div.style.color = '#ffffff';
+          div.style.padding = '24px';
+          div.style.zIndex = '999999';
+          div.style.fontFamily = 'monospace';
+          div.style.fontSize = '14px';
+          div.style.lineHeight = '1.6';
+          div.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
+          div.style.maxHeight = '50vh';
+          div.style.overflowY = 'auto';
+          div.innerHTML = '<h3 style="margin: 0 0 10px 0; font-size: 16px;">❌ ' + title + '</h3>' +
+                          '<div style="margin-bottom: 10px;"><b>Message:</b> ' + msg + '</div>' +
+                          (stack ? '<pre style="margin: 0; background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px; overflow-x: auto;">' + stack + '</pre>' : '');
+          document.body.appendChild(div);
+        }
+        window.addEventListener('error', function(e) {
+          showErr('Browser Runtime Error', e.message + ' at ' + e.filename + ':' + e.lineno + ':' + e.colno, e.error ? e.error.stack : 'N/A');
+        });
+        window.addEventListener('unhandledrejection', function(e) {
+          showErr('Promise Rejection Error', e.reason ? (e.reason.message || e.reason) : 'Unknown promise rejection', e.reason ? e.reason.stack : 'N/A');
+        });
+      })();
+    </script>
+
+
+    <!-- Admin Panel (Fullscreen Dashboard View) -->
+    <div id="admin-panel" role="dialog" aria-label="System Administration Panel">
+      <div class="admin-header">
+        <div class="header-logo">
+          <span class="logo-icon">▲</span>
+          <span class="logo-text">VizuaLux <span class="logo-sub">Hub</span></span>
+          <div class="projector-status-wrapper" style="display: flex; align-items: center; gap: 12px; margin-left: 16px; font-size: 0.75rem; color: var(--text-secondary);">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span id="projector-dot" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff7675; box-shadow: 0 0 8px #ff7675; transition: background-color 0.3s, box-shadow 0.3s;"></span>
+              <span id="projector-text">Projector Disconnected</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; border-left: 1px solid rgba(255,255,255,0.15); padding-left: 12px;">
+              <span>FPS:</span>
+              <span id="fps-counter-val" style="font-family: monospace; color: #ffeaa7;">--</span>
+            </div>
+          </div>
+        </div>
+        <div class="header-actions" style="display: flex; align-items: center; gap: 16px;">
+          <span class="keyboard-hint">
+            Shortcuts Reference
+            <div class="shortcuts-tooltip">
+              <h4>Keyboard Shortcuts</h4>
+              <div class="shortcut-item"><span>Switch Effects</span><kbd>1-9, Q-R, 0</kbd></div>
+              <div class="shortcut-item"><span>Adjust Volume</span><kbd>[</kbd> <kbd>]</kbd></div>
+              <div class="shortcut-item"><span>Sensitivity</span><kbd>-</kbd> <kbd>+</kbd></div>
+              <div class="shortcut-item"><span>Toggle Fullscreen</span><kbd>F</kbd></div>
+              <div class="shortcut-item"><span>Close Guide</span><kbd>Esc</kbd></div>
+            </div>
+          </span>
+          <button id="show-guide-btn" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.75rem; border-radius: 8px;" title="Show Setup & Calibration Guide" aria-label="Show Setup and Calibration Onboarding Guide">Guide</button>
+        </div>
+      </div>
+
+      <div class="admin-content">
+        <div class="panel-section camera-section">
+          <h2 style="display: flex; align-items: center; width: 100%;"><button type="button" id="toggle-diagnostics-btn" class="btn-toggle-diagnostics" aria-label="Toggle diagnostics visibility">Minimize Diagnostics</button></h2>
+          <div class="viewport-hud-card fade-in-up">
+            
+            <div class="camera-wrapper-container">
+              <!-- Corner focus brackets -->
+              <div class="viewport-bracket top-left"></div>
+              <div class="viewport-bracket top-right"></div>
+              <div class="viewport-bracket bottom-left"></div>
+              <div class="viewport-bracket bottom-right"></div>
+              
+              <div class="camera-wrapper" id="camera-wrapper">
+                <video id="camera-feed" autoplay playsinline muted></video>
+                <canvas id="motion-debug-canvas"></canvas>
+                <svg id="calibration-svg" width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <polygon id="calibration-poly" points="10,10 90,10 90,90 10,90" fill="rgba(139, 92, 246, 0.15)" stroke="rgba(139, 92, 246, 0.8)" stroke-width="0.5"/>
+                  <circle class="calibration-point pt-top-left" cx="10" cy="10" r="5" data-index="0" />
+                  <circle class="calibration-point pt-top-right" cx="90" cy="10" r="5" data-index="1" />
+                  <circle class="calibration-point pt-bottom-right" cx="90" cy="90" r="5" data-index="2" />
+                  <circle class="calibration-point pt-bottom-left" cx="10" cy="90" r="5" data-index="3" />
+                </svg>
+              </div>
+            </div>
+            
+            <div class="viewport-hud-footer">
+              <span id="hud-camera-resolution" class="hud-res">RES: 640 x 480 (4:3)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-section controls-section">
+          <h2>Controls</h2>
+
+            <!-- Card 2: Content Gallery -->
+            <div class="control-card fade-in-up">
+              <div class="card-header">
+                <h3>Content Gallery</h3>
+              </div>
+
+              <div class="gallery-tabs">
+                <div class="tab-sliding-bar" id="tab-sliding-bar"></div>
+                <button type="button" class="btn-tab active" data-category="all" aria-label="Show all effects">All</button>
+                <button type="button" class="btn-tab" data-category="nature" aria-label="Filter by nature effects">Nature</button>
+                <button type="button" class="btn-tab" data-category="art" aria-label="Filter by art effects">Art</button>
+                <button type="button" class="btn-tab" data-category="games" aria-label="Filter by games">Games</button>
+              </div>
+              
+              <div class="gallery-grid" id="gallery-grid">
+                <!-- Nature -->
+                <div class="gallery-item-card active" data-effect="koi" data-category="nature" role="button" aria-label="Activate Bioluminescent Koi Pond" tabindex="0">
+                  <span class="hotkey-badge">1</span>
+                  <div class="gallery-item-icon">🐟</div>
+                  <div class="gallery-item-info">
+                    <h4 class="gallery-item-title">Koi Pond</h4>
+                    <span class="gallery-item-badge">Nature</span>
+                  </div>
+                </div>
+                <div class="gallery-item-card" data-effect="garden" data-category="nature" role="button" aria-label="Activate Bioluminescent Zen Garden" tabindex="0">
+                  <span class="hotkey-badge">2</span>
+                  <div class="gallery-item-icon">🌸</div>
+                  <div class="gallery-item-info">
+                    <h4 class="gallery-item-title">Zen Garden</h4>
+                    <span class="gallery-item-badge">Nature</span>
+                  </div>
+                </div>
+                <div class="gallery-item-card" data-effect="ripples" data-category="nature" role="button" aria-label="Activate Liquid Ripples" tabindex="0">
+                  <span class="hotkey-badge">3</span>
+                  <div class="gallery-item-icon">💧</div>
+                  <div class="gallery-item-info">
+                    <h4 class="gallery-item-title">Ripples</h4>
+                    <span class="gallery-item-badge">Nature</span>
+                  </div>
+                </div>
+                <div class="gallery-item-card" data-effect="scatter" data-category="nature" role="button" aria-label="Activate Scatter Objects" tabindex="0">
+                  <span class="hotkey-badge">4</span>
+                  <div class="gallery-item-icon">🍁</div>
+                  <div class="gallery-item-info">
+                    <h4 class="gallery-item-title">Scatter</h4>
+                    <span class="gallery-item-badge">Nature</span>
+                  </div>
+                </div>
+                <!-- Art -->
+                <div class="gallery-item-card" data-effect="smoke" data-category="art" role="button" aria-label="Activate Smoke Trails" tabindex="0">
+                  <span class="hotkey-badge">5</span>
+                  <div class="gallery-item-icon">💨</div>
+                  <div class="gallery-item-info">
+                    <h4 class="gallery-item-title">Smoke</h4>
+                    <span class="gallery-item-badge">Art</span>
+                  </div>
+                </div>
+                <div class="gallery-item-card" data-effect="paint" data-category="art" role="button" aria-label="Activate Paint Splatter" tabindex="0">
+                  <span class="hotkey-badge">6</span>
+                  <div class="gallery-item-icon">🎨</div>
+                  <div class="gallery-item-info">
+                    <h4 class="gallery-item-title">Paint</h4>
+                    <span class="gallery-item-badge">Art</span>
+                  </div>
+                </div>
+                <div class="gallery-item-card" data-effect="reveal" data-category="art" role="button" aria-label="Activate Motion Reveal" tabindex="0">
+                  <span class="hotkey-badge">7</span>
+                  <div class="gallery-item-icon">🔍</div>
+                  <div class="gallery-item-info">
+                    <h4 class="gallery-item-title">Reveal</h4>
+                    <span class="gallery-item-badge">Art</span>
+                  </div>
+                </div>
+                <!-- Games -->
+                <div class="gallery-item-card" data-effect="pong" data-category="games" role="button" aria-label="Activate Floor Pong" tabindex="0">
+                  <span class="hotkey-badge">8</span>
+                  <div class="gallery-item-icon">🏓</div>
+                  <div class="gallery-item-info">
+                    <h4 class="gallery-item-title">Pong</h4>
+                    <span class="gallery-item-badge">Games</span>
+                  </div>
+                </div>
+                <div class="gallery-item-card" data-effect="asteroids" data-category="games" role="button" aria-label="Activate Asteroids Defense" tabindex="0">
+                  <span class="hotkey-badge">9</span>
+                  <div class="gallery-item-icon">🚀</div>
+                  <div class="gallery-item-info">
+                    <h4 class="gallery-item-title">Asteroids</h4>
+                    <span class="gallery-item-badge">Games</span>
+                  </div>
+                </div>
+                <!-- Nature Continued -->
+                <div class="gallery-item-card" data-effect="footprints" data-category="nature" role="button" aria-label="Activate Footprints Walk" tabindex="0">
+                  <span class="hotkey-badge">W</span>
+                  <div class="gallery-item-icon">👣</div>
+                  <div class="gallery-item-info">
+                    <h4 class="gallery-item-title">Footprints</h4>
+                    <span class="gallery-item-badge">Nature</span>
+                  </div>
+                </div>
+                <div class="gallery-item-card" data-effect="ice" data-category="nature" role="button" aria-label="Activate Breaking Ice" tabindex="0">
+                  <span class="hotkey-badge">R</span>
+                  <div class="gallery-item-icon">🧊</div>
+                  <div class="gallery-item-info">
+                    <h4 class="gallery-item-title">Breaking Ice</h4>
+                    <span class="gallery-item-badge">Nature</span>
+                  </div>
+                </div>
+                <div class="gallery-item-card" data-effect="sand" data-category="nature" role="button" aria-label="Activate Interactive Liquid Sand" tabindex="0">
+                  <span class="hotkey-badge">T</span>
+                  <div class="gallery-item-icon">⏳</div>
+                  <div class="gallery-item-info">
+                    <h4 class="gallery-item-title">Liquid Sand</h4>
+                    <span class="gallery-item-badge">Nature</span>
+                  </div>
+                </div>
+                <div class="gallery-item-card" data-effect="harmonograph" data-category="art" role="button" aria-label="Activate Dynamic Harmonograph" tabindex="0">
+                  <span class="hotkey-badge">U</span>
+                  <div class="gallery-item-icon">🖋️</div>
+                  <div class="gallery-item-info">
+                    <h4 class="gallery-item-title">Harmonograph</h4>
+                    <span class="gallery-item-badge">Art</span>
+                  </div>
+                </div>
+                <div class="gallery-item-card" data-effect="pixie" data-category="art" role="button" aria-label="Activate Pixie Dust" tabindex="0">
+                  <span class="hotkey-badge">H</span>
+                  <div class="gallery-item-icon">✨</div>
+                  <div class="gallery-item-info">
+                    <h4 class="gallery-item-title">Pixie Dust</h4>
+                    <span class="gallery-item-badge">Magical</span>
+                  </div>
+                </div>
+                <div class="gallery-item-card" data-effect="storm" data-category="nature" role="button" aria-label="Activate Bioluminescent Storm" tabindex="0">
+                  <span class="hotkey-badge">I</span>
+                  <div class="gallery-item-icon">⚡</div>
+                  <div class="gallery-item-info">
+                    <h4 class="gallery-item-title">Storm</h4>
+                    <span class="gallery-item-badge">Nature</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 1: Effect Settings -->
+            <div class="control-card fade-in-up">
+              <div class="card-header">
+                <h3>Effect Settings</h3>
+              </div>
+              
+              <!-- Hidden select populated for state tracking -->
+              <div class="control-group" style="display: none;">
+                <label for="effect-select">Active Content</label>
+                <div class="custom-select-wrapper">
+                  <select id="effect-select">
+                    <optgroup label="Interactive Nature &amp; Fluids">
+                      <option value="koi">Bioluminescent Koi Pond</option>
+                      <option value="garden">Bioluminescent Zen Garden</option>
+                      <option value="ripples">Liquid Ripples</option>
+                      <option value="scatter">Scatter Objects</option>
+                      <option value="footprints">Footprints</option>
+                      <option value="ice">Breaking Ice</option>
+                      <option value="sand">Interactive Liquid Sand</option>
+                      <option value="storm">Bioluminescent Storm</option>
+                    </optgroup>
+                    <optgroup label="Creative &amp; Generative Art">
+                      <option value="smoke">Smoke Trails</option>
+                      <option value="paint">Paint Splatter</option>
+                      <option value="reveal">Motion Reveal</option>
+                      <option value="harmonograph">Dynamic Harmonograph</option>
+                      <option value="pixie">Pixie Dust</option>
+                    </optgroup>
+                    <optgroup label="Arcade &amp; Action Games">
+                      <option value="pong">Floor Pong</option>
+                      <option value="asteroids">Asteroids Defense</option>
+                    </optgroup>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Effect Presets -->
+              <div class="control-group" id="scatter-preset-group" style="display: none;">
+                <div class="control-group-sub">
+                  <label for="scatter-preset-select">Scatter Preset</label>
+                  <div class="custom-select-wrapper">
+                    <select id="scatter-preset-select">
+                      <option value="leaf">Autumn Leaves</option>
+                      <option value="petal">Cherry Blossoms</option>
+                      <option value="snowflake">Winter Snowflakes</option>
+                      <option value="star">Glowing Stars</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="control-group-sub" style="margin-top: 12px;">
+                  <label for="scatter-qty">Quantity: <span id="scatter-qty-val">150</span></label>
+                  <input type="range" id="scatter-qty" min="20" max="500" value="150">
+                </div>
+                <div class="control-group-sub" style="margin-top: 12px;">
+                  <label for="scatter-size">Scale: <span id="scatter-size-val">1.0</span></label>
+                  <input type="range" id="scatter-size" min="0.1" max="3.0" step="0.1" value="1.0">
+                </div>
+                <div class="control-group-sub" style="margin-top: 12px;">
+                  <label for="scatter-movement">Repulsion Force: <span id="scatter-movement-val">15</span></label>
+                  <input type="range" id="scatter-movement" min="1" max="30" value="15">
+                </div>
+              </div>
+              <div class="control-group" id="smoke-preset-group" style="display: none;">
+                <label for="smoke-preset-select">Smoke Palette</label>
+                <div class="custom-select-wrapper">
+                  <select id="smoke-preset-select">
+                    <option value="purple">Neon Purple</option>
+                    <option value="cyan">Cyan Glow</option>
+                    <option value="emerald">Emerald Green</option>
+                    <option value="fire">Fire & Magma</option>
+                    <option value="mist">White Mist</option>
+                  </select>
+                </div>
+              </div>
+              <div class="control-group" id="koi-preset-group" style="display: none;">
+                <label for="koi-preset-select">Pond Preset</label>
+                <div class="custom-select-wrapper">
+                  <select id="koi-preset-select">
+                    <option value="lagoon">Bioluminescent Lagoon</option>
+                    <option value="zen">Zen Garden</option>
+                    <option value="sunset">Sunset Pond</option>
+                    <option value="deep">Deep Sea Trench</option>
+                    <option value="swamp">Mystic Swampland</option>
+                  </select>
+                </div>
+              </div>
+              <div class="control-group" id="footprints-preset-group" style="display: none;">
+                <label for="footprints-preset-select">Footprints Preset</label>
+                <div class="custom-select-wrapper">
+                  <select id="footprints-preset-select" aria-label="Select Footprints Preset">
+                    <option value="sand">Sand Beach (Barefoot)</option>
+                    <option value="snow">Snow Walk (Winter Boots)</option>
+                    <option value="mud">Mud Trail (Splattering Steps)</option>
+                    <option value="magic">Neon Magic (Glowing Tracks)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="control-group" id="ice-preset-group" style="display: none;">
+                <label for="ice-preset-select">Breaking Ice Preset</label>
+                <div class="custom-select-wrapper">
+                  <select id="ice-preset-select" aria-label="Select Breaking Ice Preset">
+                    <option value="ice">Arctic Glacier</option>
+                    <option value="lava">Lava Crust</option>
+                    <option value="glass">Stained Glass</option>
+                  </select>
+                </div>
+              </div>
+              <div class="control-group" id="sand-preset-group" style="display: none;">
+                <label for="sand-preset-select">Sand Preset</label>
+                <div class="custom-select-wrapper">
+                  <select id="sand-preset-select" aria-label="Select Sand Preset">
+                    <option value="bioluminescent">Bioluminescent Ocean</option>
+                    <option value="cyberpunk">Cyberpunk Neon</option>
+                    <option value="volcanic">Volcanic Ash</option>
+                    <option value="sandbox">Earthy Sandbox</option>
+                  </select>
+                </div>
+              </div>
+              <div class="control-group" id="harmonograph-preset-group" style="display: none;">
+                <label for="harmonograph-preset-select">Harmonograph Preset</label>
+                <div class="custom-select-wrapper">
+                  <select id="harmonograph-preset-select" aria-label="Select Harmonograph Preset">
+                    <option value="vector">Neon Vector</option>
+                    <option value="orbit">Celestial Orbit</option>
+                    <option value="laser">Laser Show</option>
+                  </select>
+                </div>
+              </div>
+              <div class="control-group" id="storm-preset-group" style="display: none;">
+                <label for="storm-preset-select">Storm Preset</label>
+                <div class="custom-select-wrapper">
+                  <select id="storm-preset-select" aria-label="Select Storm Preset">
+                    <option value="bioluminescent">Bioluminescent Ocean</option>
+                    <option value="cyberpunk">Cyberpunk Neon</option>
+                    <option value="volcanic">Volcanic Ash</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div class="control-group" id="scatter-controls" style="display: none;">
+                <div class="control-group-sub">
+                  <label for="scatter-upload">Custom Scatter Image</label>
+                  <input type="file" id="scatter-upload" accept="image/*">
+                </div>
+              </div>
+
+              <div class="control-group" id="reveal-controls" style="display: none;">
+                <div class="control-group-sub">
+                  <label for="top-layer-upload">Custom Mask (Dark Overlay)</label>
+                  <input type="file" id="top-layer-upload" accept="image/*">
+                </div>
+                <div class="control-group-sub" style="margin-top: 12px;">
+                  <label for="bg-layer-upload">Custom Revealed Background</label>
+                  <input type="file" id="bg-layer-upload" accept="image/*">
+                </div>
+              </div>
+              
+              <!-- Dynamic parameters container -->
+              <div id="active-parameters" class="control-group"></div>
+            </div>
+
+            <!-- Active Effect Details Card (Moved) -->
+            <div class="control-card effect-details-card fade-in-up">
+              <div class="card-header effect-details-header">
+                <h3>Active Content Details</h3>
+                <span id="detail-shortcut-badge" class="effect-details-shortcut">KEY 1</span>
+              </div>
+              <h4 id="detail-effect-name" class="effect-details-name">Bioluminescent Koi Pond</h4>
+              <p id="detail-effect-desc" class="effect-details-desc">Watch glowing, procedurally animated Koi fish swim through deep, dark waters. Moving creates ripple disturbances that Koi swim away from or investigate.</p>
+              <div class="effect-interaction-guide">
+                <span class="effect-interaction-label">Interaction Guide</span>
+                <p id="detail-effect-interaction" class="effect-interaction-text">Walk on the floor to generate water ripples. Koi fish will naturally avoid or flock to your movements, leaving bioluminescent caustics.</p>
+              </div>
+            </div>
+
+            <!-- System Configuration -->
+            <div class="control-card fade-in-up">
+              <div class="card-header">
+                <h3>System Configuration</h3>
+                <div style="display: flex; gap: 8px;">
+                  <button type="button" class="card-status" id="warp-btn" aria-label="Toggle warp calibration overlay" aria-pressed="false">Warp</button>
+                  <button type="button" class="card-status" id="playlist-btn" aria-label="Toggle auto-play playlist rotation" aria-pressed="false">Playlist</button>
+                </div>
+              </div>
+
+              <div class="control-group">
+                <label for="camera-select">Input Source</label>
+                <div class="custom-select-wrapper">
+                  <select id="camera-select" aria-label="Select camera input source">
+                    <option value="">Default Camera</option>
+                  </select>
+                </div>
+                <div class="toggle-row" style="margin-top: 10px;">
+                  <label for="auto-motion-checkbox" style="margin-bottom: 0;">Enable Auto-Motion (Simulation)</label>
+                  <input type="checkbox" id="auto-motion-checkbox" aria-label="Toggle simulated auto-motion input">
+                </div>
+                <button id="blackout-btn" class="btn btn-secondary" aria-label="Toggle blackout projector output" style="width: 100%; margin-top: 12px;">Blackout</button>
+              </div>
+              
+              <div class="button-row" style="gap: 8px;">
+                <button id="start-camera-btn" class="btn btn-primary" style="flex: 1;">Start Camera</button>
+                <button id="open-projector-btn" class="btn btn-info" style="flex: 1;">Open Projector</button>
+              </div>
+              <div class="button-row" style="margin-top: 8px; margin-bottom: 12px;">
+                <button id="host-presentation-btn" class="btn btn-secondary" style="width: 100%;" aria-label="Toggle single-device host fullscreen presentation mode">Host Presentation Mode</button>
+              </div>
+              <div class="button-row" id="capture-bg-btn-container" style="margin-bottom: 15px;">
+                <button id="capture-bg-btn" class="btn btn-warning" style="width: 100%;" aria-label="Capture empty room background reference">Set Reference</button>
+              </div>
+              <div class="projector-card-status" style="display: flex; align-items: center; gap: 8px; margin-bottom: 15px; font-size: 0.85rem;">
+                <span id="projector-card-dot" class="status-dot disconnected" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: #ff7675; box-shadow: 0 0 8px #ff7675; transition: background-color 0.3s, box-shadow 0.3s;"></span>
+                <span id="projector-card-text" style="color: rgba(255, 255, 255, 0.7);">Projector Disconnected</span>
+              </div>
+
+              <hr style="border: 0; border-top: 1px solid rgba(255, 255, 255, 0.08); margin: 15px 0;">
+
+              <div class="control-group">
+                <label for="detection-mode-select">Detection Mode</label>
+                <div class="custom-select-wrapper">
+                  <select id="detection-mode-select" aria-label="Select detection mode">
+                    <option value="classic">Classic Motion (Fast)</option>
+                    <option value="ai">AI Pose Tracking (Accurate)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="control-group" id="ai-debug-container" style="display: none; margin-top: 10px; margin-bottom: 10px;">
+                <div class="toggle-row">
+                  <label for="ai-debug-checkbox" style="margin-bottom: 0;">Show AI Tracking Skeleton</label>
+                  <input type="checkbox" id="ai-debug-checkbox" aria-label="Toggle AI debug visualization">
+                </div>
+              </div>
+
+              <div class="control-group" id="classic-sensitivity-container">
+                <label>Motion Sensitivity: <span id="motion-threshold-val">30</span></label>
+                <div class="btn-group-sensitivity" id="sensitivity-buttons-container" role="group" aria-label="Camera motion sensitivity preset levels">
+                  <button type="button" class="btn-sens" data-value="10" aria-label="Sensitivity Level 1">1</button>
+                  <button type="button" class="btn-sens" data-value="20" aria-label="Sensitivity Level 2">2</button>
+                  <button type="button" class="btn-sens" data-value="30" aria-label="Sensitivity Level 3">3</button>
+                  <button type="button" class="btn-sens" data-value="40" aria-label="Sensitivity Level 4">4</button>
+                  <button type="button" class="btn-sens" data-value="50" aria-label="Sensitivity Level 5">5</button>
+                  <button type="button" class="btn-sens" data-value="60" aria-label="Sensitivity Level 6">6</button>
+                  <button type="button" class="btn-sens" data-value="70" aria-label="Sensitivity Level 7">7</button>
+                  <button type="button" class="btn-sens" data-value="80" aria-label="Sensitivity Level 8">8</button>
+                  <button type="button" class="btn-sens" data-value="90" aria-label="Sensitivity Level 9">9</button>
+                  <button type="button" class="btn-sens" data-value="100" aria-label="Sensitivity Level 10">10</button>
+                </div>
+              </div>
+              
+              <!-- Calibration template/pattern selector -->
+              <div class="control-group">
+                <label>Calibration Pattern</label>
+                <div class="pattern-selector-buttons" role="group" aria-label="Calibration test patterns">
+                  <button type="button" class="btn-pattern active" data-pattern="corners" aria-label="Corners calibration pattern" aria-pressed="true">Corners</button>
+                  <button type="button" class="btn-pattern" data-pattern="grid" aria-label="Grid calibration pattern" aria-pressed="false">Grid</button>
+                  <button type="button" class="btn-pattern" data-pattern="checkerboard" aria-label="Checkerboard calibration pattern" aria-pressed="false">Checkerboard</button>
+                  <button type="button" class="btn-pattern" data-pattern="circles" aria-label="Circles calibration pattern" aria-pressed="false">Circles</button>
+                  <button type="button" class="btn-pattern" data-pattern="white" aria-label="White calibration pattern" aria-pressed="false">White</button>
+                </div>
+              </div>
+
+               <div class="button-row" style="margin-bottom: 8px;">
+                 <button type="button" id="toggle-calib-screen-btn" class="btn btn-secondary" style="width: 100%;" aria-label="Toggle calibration pattern output">Toggle Calibration Output</button>
+               </div>
+
+               <div class="button-row" style="margin-bottom: 8px;">
+                 <button type="button" id="undo-warp-btn" class="btn btn-secondary" style="flex: 1;" aria-label="Undo last calibration change" disabled>Undo</button>
+                 <button type="button" id="redo-warp-btn" class="btn btn-secondary" style="flex: 1;" aria-label="Redo last calibration change" disabled>Redo</button>
+               </div>
+               <div class="button-row" style="margin-bottom: 8px;">
+                 <button type="button" id="auto-calibrate-btn" class="btn btn-primary" style="width: 100%;" aria-label="Start automatic camera calibration">Auto Calibrate</button>
+               </div>
+
+              <!-- Advanced Section (Default Collapsed) -->
+              <details class="advanced-collapse" style="margin-top: 15px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+                <summary style="cursor: pointer; font-size: 0.9rem; font-weight: 600; color: rgba(255, 255, 255, 0.75); user-select: none; padding: 12px 0 6px; display: flex; align-items: center; justify-content: space-between; outline: none;">
+                  <span>Advanced</span>
+                  <span class="summary-arrow" style="font-size: 0.8rem; transition: transform 0.2s;">▼</span>
+                </summary>
+                <div style="padding-top: 6px; display: flex; flex-direction: column; gap: 12px;">
+                  <!-- Performance Controls -->
+                  <div class="control-group" style="margin-bottom: 5px;">
+                    <label>Performance & Optimization</label>
+                    <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px;">
+                      <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                        <label for="resolution-scale-select" style="font-size: 0.85rem; color: rgba(255, 255, 255, 0.7); margin-bottom: 0;">Render Resolution Scale</label>
+                        <div class="custom-select-wrapper" style="width: 130px; margin-bottom: 0;">
+                          <select id="resolution-scale-select" aria-label="Choose rendering resolution scale multiplier">
+                            <option value="0.25">0.25x (Low)</option>
+                            <option value="0.5">0.50x (Medium-Low)</option>
+                            <option value="0.75">0.75x (Medium)</option>
+                            <option value="1.0" selected>1.00x (Full)</option>
+                            <option value="1.25">1.25x (Super-Sampled)</option>
+                            <option value="1.5">1.50x (High-Fidelity)</option>
+                          </select>
+                        </div>
+                      </div>
+                      
+                      <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                        <label for="fps-limit-select" style="font-size: 0.85rem; color: rgba(255, 255, 255, 0.7); margin-bottom: 0;">Target Frame Rate Limit</label>
+                        <div class="custom-select-wrapper" style="width: 130px; margin-bottom: 0;">
+                          <select id="fps-limit-select" aria-label="Choose frame rate limit">
+                            <option value="30">30 FPS</option>
+                            <option value="60">60 FPS</option>
+                            <option value="uncapped" selected>Uncapped</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+              <hr style="border: 0; border-top: 1px solid rgba(255, 255, 255, 0.08); margin: 15px 0;">
+
+              <!-- Audio Control -->
+              <div class="control-group">
+                <div class="toggle-row">
+                  <label for="sound-toggle" style="margin-bottom: 0;">Enable Audio</label>
+                  <input type="checkbox" id="sound-toggle" checked aria-label="Toggle system audio playback">
+                </div>
+              </div>
+              <div class="control-group" style="margin-bottom: 20px;">
+                <label for="volume-slider">Volume: <span id="volume-val">80%</span></label>
+                <input type="range" id="volume-slider" min="0" max="100" value="80" aria-label="Adjust system volume level">
+              </div>
+
+              <hr style="border: 0; border-top: 1px solid rgba(255, 255, 255, 0.08); margin: 15px 0;">
+
+              <!-- Auto-Play Rotation -->
+              <div class="control-group">
+                <div class="toggle-row">
+                  <label for="auto-rotate-checkbox" style="margin-bottom: 0;">Auto-Play Content</label>
+                  <input type="checkbox" id="auto-rotate-checkbox" aria-label="Toggle automatic rotation of active effects">
+                </div>
+              </div>
+              <div class="control-group" style="margin-bottom: 20px;">
+                <label>Playlist Configuration</label>
+                <div class="playlist-scroll-container" id="playlist-scroll-container" role="group" aria-label="Configure auto-play duration and toggle states per effect">
+                  <!-- Checkboxes and custom duration fields will be populated by main.js -->
+                </div>
+              </div>
+            </div>
+
+          <!-- Control Card 4 Removed -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Hidden canvas used for processing diffs -->
+    <canvas id="processing-canvas" style="display: none;"></canvas>
+
+
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+    <!-- Welcome Onboarding Guide Screen -->
+    <div id="welcome-guide-overlay" class="welcome-guide-overlay">
+      <div class="welcome-guide-modal">
+        <div class="welcome-header">
+          <span class="welcome-logo">▲ VizuaLux <span class="logo-sub">Hub</span></span>
+          <h2>Setup & Calibration Guide</h2>
+          <p class="welcome-subtitle">Get your interactive floor projection mapped and calibrated in 4 quick steps.</p>
+        </div>
+        
+        <div class="welcome-steps">
+          <div class="welcome-step-card">
+            <div class="step-num">1</div>
+            <h3>Select Camera</h3>
+            <p>Grant webcam permissions and choose your input device from the <b>Camera Source</b> dropdown inside the control deck.</p>
+          </div>
+          
+          <div class="welcome-step-card">
+            <div class="step-num">2</div>
+            <h3>Warp & Calibrate</h3>
+            <p>Click <b>Open Projector</b>. Enable <b>Test Screen</b> to see color corner targets, and drag the 4 corner points to map the camera view to the projection area. Use Arrow keys to nudge the selected point, hold Shift for larger steps.</p>
+          </div>
+          
+          <div class="welcome-step-card">
+            <div class="step-num">3</div>
+            <h3>Set Background</h3>
+            <p>Ensure the interactive floor projection area is completely clear of people or moving objects, then click <b>Set Reference</b>.</p>
+          </div>
+          
+          <div class="welcome-step-card">
+            <div class="step-num">4</div>
+            <h3>Interact & Play</h3>
+            <p>Choose an interactive effect or game from <b>Active Content</b>. Walk or step on the projected area to trigger physics and visual effects!</p>
+          </div>
+        </div>
+        
+        <div class="welcome-footer">
+          <label class="checkbox-container">
+            <input type="checkbox" id="skip-guide-checkbox">
+            <span class="checkbox-label">Don't show this guide on startup</span>
+          </label>
+          <button id="close-guide-btn" class="btn btn-primary">Launch Dashboard</button>
+        </div>
+      </div>
+    </div>
+    <!-- Auto Calibration Overlay Modal -->
+    <div id="autocalib-overlay" class="welcome-guide-overlay" style="display: none; z-index: 10000;">
+      <!-- Fullscreen Target Layer for Local Calibration (Single Screen Mode) -->
+      <div id="local-autocalib-target-layer" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000000; z-index: 0; display: none;">
+        <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <circle id="local-autocalib-center-dot" cx="-50" cy="-50" r="3.5" fill="#ffffff" />
+          <circle id="local-autocalib-pulsing-ring" cx="-50" cy="-50" r="7" fill="none" stroke="#ffffff" stroke-width="0.6" opacity="0.8">
+            <animate attributeName="r" values="3.5;10;3.5" dur="1.5s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.8;0;0.8" dur="1.5s" repeatCount="indefinite" />
+          </circle>
+        </svg>
+      </div>
+
+      <div class="welcome-guide-modal" style="max-width: 500px; text-align: center; z-index: 1;">
+        <div class="welcome-header">
+          <span class="welcome-logo" style="color: #00f3ff;">▲ Auto Calibration</span>
+          <h2>Mapping Projection Floor</h2>
+          <p id="autocalib-status-text" class="welcome-subtitle" style="margin-bottom: 15px;">Initializing camera feed...</p>
+        </div>
+        
+        <div style="position: relative; width: 100%; aspect-ratio: 4/3; background: #0c0a1a; border-radius: 12px; overflow: hidden; margin-bottom: 20px; border: 1.5px solid rgba(0, 243, 255, 0.25); box-shadow: 0 0 15px rgba(0, 243, 255, 0.15);">
+          <canvas id="autocalib-debug-canvas" style="position: absolute; top:0; left:0; width:100%; height:100%; display:block; object-fit: cover;"></canvas>
+        </div>
+        
+        <div class="progress-bar-container" style="width: 100%; height: 6px; background: rgba(255, 255, 255, 0.1); border-radius: 3px; overflow: hidden; margin-bottom: 25px;">
+          <div id="autocalib-progress-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, #00f3ff, #00ffaa); transition: width 0.3s; box-shadow: 0 0 8px #00ffaa;"></div>
+        </div>
+        
+        <button id="autocalib-cancel-btn" class="btn btn-secondary" style="width: 100%;">Cancel Calibration</button>
+      </div>
+    </div>
+
+    <!-- Host Presentation Mode Overlay -->
+    <div id="host-presentation-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #000000; z-index: 10001;">
+      <canvas id="host-canvas-1" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; opacity: 1;"></canvas>
+      <canvas id="host-canvas-2" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0;"></canvas>
+      
+      <!-- Local Calibration Screen (for Host Presentation Mode) -->
+      <div id="local-calibration-output-screen" class="pattern-corners" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10001.2;">
+        <div class="calibration-pattern-layer pattern-corners" style="display: block; width: 100%; height: 100%; position: absolute;">
+          <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <line x1="0" y1="0" x2="100" y2="100" stroke="#f472b6" stroke-width="2.2" />
+            <line x1="100" y1="0" x2="0" y2="100" stroke="#f472b6" stroke-width="2.2" />
+            <path d="M 0,10 L 0,0 L 10,0" fill="none" stroke="#ef4444" stroke-width="4.0" />
+            <path d="M 100,10 L 100,0 L 90,0" fill="none" stroke="#3b82f6" stroke-width="4.0" />
+            <path d="M 100,90 L 100,100 L 90,100" fill="none" stroke="#f59e0b" stroke-width="4.0" />
+            <path d="M 0,90 L 0,100 L 10,100" fill="none" stroke="#10b981" stroke-width="4.0" />
+          </svg>
+        </div>
+        <div class="calibration-pattern-layer pattern-grid" style="display: none; width: 100%; height: 100%; position: absolute;">
+          <svg width="100%" height="100%">
+            <defs><pattern id="grid-pattern-svg-local" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="#00ffcc" stroke-width="1.5"/></pattern></defs>
+            <rect width="100%" height="100%" fill="url(#grid-pattern-svg-local)" />
+          </svg>
+        </div>
+        <div class="calibration-pattern-layer pattern-checkerboard" style="display: none; width: 100%; height: 100%; position: absolute;">
+          <svg width="100%" height="100%">
+            <defs>
+              <pattern id="checkerboard-pattern-svg-local" width="100" height="100" patternUnits="userSpaceOnUse">
+                <rect width="50" height="50" fill="#ffffff" /><rect x="50" width="50" height="50" fill="#111111" /><rect y="50" width="50" height="50" fill="#111111" /><rect x="50" y="50" width="50" height="50" fill="#ffffff" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#checkerboard-pattern-svg-local)" />
+          </svg>
+        </div>
+        <div class="calibration-pattern-layer pattern-circles" style="display: none; width: 100%; height: 100%; position: absolute;">
+          <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <line x1="0" y1="0" x2="100" y2="100" stroke="#f472b6" stroke-width="1.0" /><line x1="100" y1="0" x2="0" y2="100" stroke="#f472b6" stroke-width="1.0" />
+            <circle cx="50" cy="50" r="10" fill="none" stroke="#00ffff" stroke-width="1.5" /><circle cx="50" cy="50" r="20" fill="none" stroke="#00ffff" stroke-width="1.5" />
+            <circle cx="50" cy="50" r="30" fill="none" stroke="#00ffff" stroke-width="1.5" /><circle cx="50" cy="50" r="40" fill="none" stroke="#00ffff" stroke-width="1.5" />
+            <line x1="50" y1="0" x2="50" y2="100" stroke="#00ffff" stroke-dasharray="1, 1" stroke-width="1.5" /><line x1="0" y1="50" x2="100" y2="50" stroke="#00ffff" stroke-dasharray="1, 1" stroke-width="1.5" />
+          </svg>
+        </div>
+        <div class="calibration-pattern-layer pattern-white" style="display: none; width: 100%; height: 100%; position: absolute; background-color: #ffffff;"></div>
+      </div>
+
+      <!-- Eco Mode (Dim Screen) Overlay -->
+      <div id="presentation-dim-overlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.85); pointer-events: none; z-index: 10001.5;"></div>
+      <!-- Controls Group -->
+      <div id="presentation-controls" style="position: fixed; top: 20px; right: 20px; z-index: 10002; display: flex; gap: 12px; pointer-events: auto; transition: opacity 0.6s ease, transform 0.6s ease; opacity: 0; transform: translateX(20px);">
+        <button id="dim-presentation-btn" style="padding: 10px 20px; background: rgba(0, 0, 0, 0.6); color: #ffffff; border: 1.5px solid rgba(255, 255, 255, 0.4); border-radius: 8px; font-family: 'Outfit', sans-serif; cursor: pointer; transition: background 0.2s, border-color 0.2s; white-space: nowrap;">Eco Mode (Dim)</button>
+        <button id="exit-presentation-btn" style="padding: 10px 20px; background: rgba(0, 0, 0, 0.6); color: #ffffff; border: 1.5px solid rgba(255, 255, 255, 0.4); border-radius: 8px; font-family: 'Outfit', sans-serif; cursor: pointer; transition: background 0.2s, border-color 0.2s; white-space: nowrap;">Exit Fullscreen</button>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
