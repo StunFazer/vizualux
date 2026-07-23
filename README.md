@@ -2,6 +2,9 @@
 
 Vizualux is a high-performance, decoupled interactive projection installation framework. It combines real-time Computer Vision (MediaPipe Pose & OpenCV Frame Differencing) with 3D WebGL graphics (React Three Fiber & Rapier Physics) to transform any physical floor or wall into a dynamic, responsive digital canvas.
 
+> [!TIP]
+> 🌐 **Live Demo Available**: Explore the functional interactive web demo online at [vizualux.neocities.org](https://vizualux.neocities.org)!
+
 ---
 
 ## 🚀 Features & Highlights
