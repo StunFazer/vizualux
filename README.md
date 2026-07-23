@@ -1,33 +1,33 @@
-# 🌟 Vizualux — Interactive Projection & Computer Vision System
+# Vizualux — Interactive Projection & Computer Vision System
 
 Vizualux is a high-performance, decoupled interactive projection installation framework. It combines real-time Computer Vision (MediaPipe Pose & OpenCV Frame Differencing) with 3D WebGL graphics (React Three Fiber & Rapier Physics) to transform any physical floor or wall into a dynamic, responsive digital canvas.
 
 > [!TIP]
-> 🌐 **Live Demo Available**: Explore the functional interactive web demo online at [vizualux.neocities.org](https://vizualux.neocities.org)!
+> **Live Demo Available**: Explore the functional interactive web demo online at [vizualux.neocities.org](https://vizualux.neocities.org)!
 
 ---
 
-## 🚀 Features & Highlights
+## Features & Highlights
 
-### 🎯 Dual Computer Vision Tracking Engine
+### Dual Computer Vision Tracking Engine
 - **MediaPipe Pose Landmarker**: High-fidelity 3D skeleton tracking capturing hands, feet, and center-of-mass.
 - **OpenCV Motion Detector**: High-speed frame-differencing blob detection that tracks motion vectors, area, and direction regardless of body shape (ideal for objects, animals, or multi-user interaction).
 - **Runtime Mode Switcher**: Toggle between Pose and Motion detection instantly from the control interface.
 
-### 🎨 8 Interactive Visual Modes
+### 8 Interactive Visual Modes
 
 | Mode | Visual Theme | Mechanics & Interaction |
 | :--- | :--- | :--- |
-| 🪐 **Rigid Body Sandbox** | Space Asteroids | 3D Rapier rigid body physics. Hands and feet create physical colliders to push space debris. |
-| 🌊 **Fluid Dynamics** | Liquid Shaders | Real-time GLSL fluid simulation. Left/right hands and feet create multi-colored wave disturbances. |
-| 🐟 **Interactive Koi Pond** | Bioluminescent Aquatic | Boids AI school of Koi fish. Footsteps spawn water ripples; hands drop breadcrumbs to feed; stepping startles fish away. |
-| 🌲 **Forest Motion Reveal** | Lush Mossy Floor | Offscreen 2D canvas alpha mask. Walking over the dark void reveals a photorealistic forest floor that slowly dissolves back to dark. |
-| 🍁 **Leaf Scatter** | Autumn Leaves | 2D/3D maple leaf physics. Leaves drift on drag friction and spin/scatter away when kicked. |
-| ✨ **Twinkling Sparkles** | Cosmic Flares | Velocity-triggered starburst particles that float upward, twinkle via sine scaling, and fade. |
-| 🌈 **Particle Trail** | Rainbow Flow | Continuous HSL hue-cycling particle streams following fast-moving hands and feet. |
-| 🏖️ **Sandy Shore Ripples** | Beach Coastline | Photorealistic wet sand under shallow water. Stepping generates water rings and kicks 3D procedural seashells. |
+| **Rigid Body Sandbox** | Space Asteroids | 3D Rapier rigid body physics. Hands and feet create physical colliders to push space debris. |
+| **Fluid Dynamics** | Liquid Shaders | Real-time GLSL fluid simulation. Left/right hands and feet create multi-colored wave disturbances. |
+| **Interactive Koi Pond** | Bioluminescent Aquatic | Boids AI school of Koi fish. Footsteps spawn water ripples; hands drop breadcrumbs to feed; stepping startles fish away. |
+| **Forest Motion Reveal** | Lush Mossy Floor | Offscreen 2D canvas alpha mask. Walking over the dark void reveals a photorealistic forest floor that slowly dissolves back to dark. |
+| **Leaf Scatter** | Autumn Leaves | 2D/3D maple leaf physics. Leaves drift on drag friction and spin/scatter away when kicked. |
+| **Twinkling Sparkles** | Cosmic Flares | Velocity-triggered starburst particles that float upward, twinkle via sine scaling, and fade. |
+| **Particle Trail** | Rainbow Flow | Continuous HSL hue-cycling particle streams following fast-moving hands and feet. |
+| **Sandy Shore Ripples** | Beach Coastline | Photorealistic wet sand under shallow water. Stepping generates water rings and kicks 3D procedural seashells. |
 
-### 🛠️ Hardware & Calibration Tools
+### Hardware & Calibration Tools
 - **Dual-Display Architecture**: Separate **Control Panel** (operator interface) and **Projector View** (fullscreen output) synced in real-time via `BroadcastChannel` and WebSockets.
 - **ArUco Auto-Calibration**: Project 4 ArUco markers (IDs 0–3) at the screen corners for one-click automated perspective homography alignment using OpenCV.
 - **Manual Homography Dragging**: Intuitive 4-corner handle adjustment on camera preview for fine tuning.
@@ -39,7 +39,7 @@ Vizualux is a high-performance, decoupled interactive projection installation fr
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 
 ```mermaid
 flowchart TD
@@ -71,7 +71,7 @@ flowchart TD
 
 ---
 
-## 📋 Prerequisites & Installation
+## Prerequisites & Installation
 
 ### Hardware Requirements
 - **Host Computer**: Windows 10/11 (Intel i5/Ryzen 5+, 8GB RAM, Dedicated GPU recommended)
@@ -85,7 +85,7 @@ flowchart TD
 
 ---
 
-## ⚡ Quick Start
+## Quick Start
 
 ### One-Click Launch (Windows)
 Double-click `start_installation.bat` in the root folder. It will launch both the Python tracking backend and Vite frontend server in separate command windows.
@@ -110,18 +110,18 @@ npm run dev
 
 ---
 
-## 🎯 Calibration Guide
+## Calibration Guide
 
 1. Open the Control Panel on your laptop at `http://localhost:5173`.
 2. Click **Launch Projector Window** and drag the new window to your projector display (press `Double-Click` or `F11` for Fullscreen).
 3. Click **Calibrate Tracking** on the Control Panel.
-4. **Option A (Automated)**: Point your camera at the projector screen and click **⟳ Auto Calibrate**. OpenCV will detect the 4 ArUco markers and snap the calibration handles into place.
+4. **Option A (Automated)**: Point your camera at the projector screen and click **Auto Calibrate**. OpenCV will detect the 4 ArUco markers and snap the calibration handles into place.
 5. **Option B (Manual)**: Drag the 4 corner handles on the camera preview so they line up with the 4 color boxes projected on your surface.
 6. Click **Save & Exit Calibration**. Your calibration settings are saved to `localStorage` automatically.
 
 ---
 
-## 📱 Remote Control Setup (Mobile / Tablet)
+## Remote Control Setup (Mobile / Tablet)
 
 To control the installation from your smartphone or tablet while walking around the space:
 1. Ensure your mobile device is connected to the **same Wi-Fi network** as the host PC.
@@ -134,7 +134,7 @@ To control the installation from your smartphone or tablet while walking around 
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```text
 vizualux/
@@ -176,6 +176,6 @@ vizualux/
 
 ---
 
-## 📄 License
+## License
 
 Distributed under the MIT License. See `LICENSE` for more information.
