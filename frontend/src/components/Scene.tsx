@@ -10,6 +10,7 @@ import { ScatterLeaves } from './modes/ScatterLeaves'
 import { Sparkles } from './modes/Sparkles'
 import { ParticleTrail } from './modes/ParticleTrail'
 import { SandyShore } from './modes/SandyShore'
+import { SilhouetteFX } from './modes/SilhouetteFX'
 import { KinematicColliders } from './KinematicColliders'
 import { Environment } from '@react-three/drei'
 
@@ -63,6 +64,10 @@ export function Scene() {
 
           {currentMode === 'SandyShore' && (
             <SandyShore />
+          )}
+
+          {currentMode === 'SilhouetteFX' && (
+            <SilhouetteFX />
           )}
         </Suspense>
       </Canvas>

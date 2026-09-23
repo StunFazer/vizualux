@@ -14,7 +14,7 @@ Vizualux is a high-performance, decoupled interactive projection installation fr
 - **OpenCV Motion Detector**: High-speed frame-differencing blob detection that tracks motion vectors, area, and direction regardless of body shape (ideal for objects, animals, or multi-user interaction).
 - **Runtime Mode Switcher**: Toggle between Pose and Motion detection instantly from the control interface.
 
-### 8 Interactive Visual Modes
+### 9 Interactive Visual Modes
 
 | Mode | Visual Theme | Mechanics & Interaction |
 | :--- | :--- | :--- |
@@ -26,6 +26,7 @@ Vizualux is a high-performance, decoupled interactive projection installation fr
 | **Twinkling Sparkles** | Cosmic Flares | Velocity-triggered starburst particles that float upward, twinkle via sine scaling, and fade. |
 | **Particle Trail** | Rainbow Flow | Continuous HSL hue-cycling particle streams following fast-moving hands and feet. |
 | **Sandy Shore Ripples** | Beach Coastline | Photorealistic wet sand under shallow water. Stepping generates water rings and kicks 3D procedural seashells. |
+| **Silhouette FX** | Cyber Hologram | Real-time AI (MediaPipe) and MOG2 segmentation. Features Neon Aura edge glow, cosmic starfield fill, motion echo trails, and edge sparks. |
 
 ### Hardware & Calibration Tools
 - **Dual-Display Architecture**: Separate **Control Panel** (operator interface) and **Projector View** (fullscreen output) synced in real-time via `BroadcastChannel` and WebSockets.

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type AppMode = 'Asteroids' | 'FluidSimulation' | 'KoiPond' | 'MotionReveal' | 'ScatterLeaves' | 'Sparkles' | 'ParticleTrail' | 'SandyShore'
+export type AppMode = 'Asteroids' | 'FluidSimulation' | 'KoiPond' | 'MotionReveal' | 'ScatterLeaves' | 'Sparkles' | 'ParticleTrail' | 'SandyShore' | 'SilhouetteFX'
 
 export interface Point2D {
   x: number
@@ -8,6 +8,9 @@ export interface Point2D {
 }
 
 export type TrackingMode = 'pose' | 'motion'
+export type SilhouetteEngine = 'human' | 'object'
+export type SilhouetteResolution = 'performance' | 'hd'
+export type SilhouetteEffect = 'aura' | 'cosmic' | 'echo' | 'sparks' | 'combined'
 
 interface TrackerThresholds {
   detection: number
@@ -38,6 +41,20 @@ interface AppState {
   toggleAdvanced: () => void
   cameras: { index: number, name: string }[]
   setCameras: (cameras: { index: number, name: string }[]) => void
+  
+  // Silhouette FX State
+  silhouetteEngine: SilhouetteEngine
+  setSilhouetteEngine: (engine: SilhouetteEngine) => void
+  silhouetteResolution: SilhouetteResolution
+  setSilhouetteResolution: (res: SilhouetteResolution) => void
+  silhouetteEffect: SilhouetteEffect
+  setSilhouetteEffect: (effect: SilhouetteEffect) => void
+  silhouetteColor: string
+  setSilhouetteColor: (color: string) => void
+  silhouetteRainbow: boolean
+  setSilhouetteRainbow: (val: boolean) => void
+  silhouetteTrailDecay: number
+  setSilhouetteTrailDecay: (val: number) => void
 }
 
 const defaultCorners: Point2D[] = [
@@ -57,7 +74,17 @@ const loadCorners = (): Point2D[] => {
 
 export const useStore = create<AppState>((set) => ({
   currentMode: 'Asteroids',
-  setMode: (mode) => set({ currentMode: mode }),
+  setMode: (mode) => set((state) => {
+    if (state.emitMessage) {
+      state.emitMessage({ 
+        type: 'set_segmentation_config', 
+        enabled: mode === 'SilhouetteFX',
+        engine: state.silhouetteEngine,
+        resolution: state.silhouetteResolution
+      })
+    }
+    return { currentMode: mode }
+  }),
   trackingStatus: false,
   setTrackingStatus: (status) => set({ trackingStatus: status }),
   activeCamera: 0,
@@ -96,6 +123,30 @@ export const useStore = create<AppState>((set) => ({
   toggleAdvanced: () => set((state) => ({ advancedOpen: !state.advancedOpen })),
   cameras: Array.from({ length: 10 }).map((_, i) => ({ index: i, name: `Camera ${i}` })),
   setCameras: (cameras) => set({ cameras }),
+
+  // Silhouette FX State Implementation
+  silhouetteEngine: 'human',
+  setSilhouetteEngine: (engine) => set((state) => {
+    if (state.emitMessage) {
+      state.emitMessage({ type: 'set_segmentation_config', engine })
+    }
+    return { silhouetteEngine: engine }
+  }),
+  silhouetteResolution: 'performance',
+  setSilhouetteResolution: (res) => set((state) => {
+    if (state.emitMessage) {
+      state.emitMessage({ type: 'set_segmentation_config', resolution: res })
+    }
+    return { silhouetteResolution: res }
+  }),
+  silhouetteEffect: 'combined',
+  setSilhouetteEffect: (effect) => set({ silhouetteEffect: effect }),
+  silhouetteColor: '#00f5ff',
+  setSilhouetteColor: (color) => set({ silhouetteColor: color, silhouetteRainbow: false }),
+  silhouetteRainbow: false,
+  setSilhouetteRainbow: (val) => set({ silhouetteRainbow: val }),
+  silhouetteTrailDecay: 0.94,
+  setSilhouetteTrailDecay: (val) => set({ silhouetteTrailDecay: val }),
 }))
 
 const bc = new BroadcastChannel('app-sync')
@@ -117,7 +168,13 @@ useStore.subscribe((state) => {
       calibrationCorners: state.calibrationCorners,
       activeCamera: state.activeCamera,
       uiVisible: state.uiVisible,
-      trackingMode: state.trackingMode
+      trackingMode: state.trackingMode,
+      silhouetteEngine: state.silhouetteEngine,
+      silhouetteResolution: state.silhouetteResolution,
+      silhouetteEffect: state.silhouetteEffect,
+      silhouetteColor: state.silhouetteColor,
+      silhouetteRainbow: state.silhouetteRainbow,
+      silhouetteTrailDecay: state.silhouetteTrailDecay
     }
     bc.postMessage({ type: 'SYNC_STATE', state: syncableState })
   }

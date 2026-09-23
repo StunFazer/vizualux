@@ -4,10 +4,12 @@ import cv2
 import websockets
 from tracker import SkeletonTracker
 from motion_detector import MotionDetector
+from segmenter import BackgroundSegmenter
 import cv2.aruco as aruco
 import base64
 import argparse
 import platform
+import time
 
 # Global variables
 latest_data = {"is_tracking": False}
@@ -20,6 +22,15 @@ tracker_config = {"detection": 0.3, "presence": 0.3, "tracking": 0.3}
 tracker_config_changed = False
 is_auto_calibrating = False
 
+# Silhouette FX Segmentation State
+segmentation_enabled = False
+segmentation_engine = "human"  # "human" or "object"
+segmentation_resolution = "performance"  # "performance" (320x180) or "hd" (640x360)
+segmentation_config_changed = False
+latest_mask_binary = None
+last_render_heartbeat = time.time()
+bg_segmenter = BackgroundSegmenter()
+
 async def capture_loop(debug_mode=False):
     """
     Continuously capture frames from the camera and process them.
@@ -27,9 +38,11 @@ async def capture_loop(debug_mode=False):
     """
     global latest_data, current_camera_index, camera_changed, is_calibrating
     global tracking_mode, tracking_mode_changed, tracker_config, tracker_config_changed, is_auto_calibrating
+    global segmentation_enabled, segmentation_engine, segmentation_resolution, segmentation_config_changed
+    global latest_mask_binary, last_render_heartbeat, bg_segmenter
     
     cap = None
-    tracker = SkeletonTracker()
+    tracker = SkeletonTracker(enable_segmentation=segmentation_enabled)
     motion_det = MotionDetector()
     
     while True:
@@ -58,14 +71,18 @@ async def capture_loop(debug_mode=False):
             
             camera_changed = False
 
-            if tracker_config_changed:
-                print(f"Re-initializing tracker with config: {tracker_config}")
-                tracker = SkeletonTracker(
-                    detection_confidence=tracker_config["detection"],
-                    presence_confidence=tracker_config["presence"],
-                    tracking_confidence=tracker_config["tracking"]
-                )
-                tracker_config_changed = False
+        # Re-initialize tracker when thresholds or segmentation mode change
+        if tracker_config_changed or segmentation_config_changed:
+            print(f"Re-initializing tracker with config: {tracker_config}, segmentation={segmentation_enabled}")
+            tracker = SkeletonTracker(
+                detection_confidence=tracker_config["detection"],
+                presence_confidence=tracker_config["presence"],
+                tracking_confidence=tracker_config["tracking"],
+                enable_segmentation=segmentation_enabled,
+                num_poses=4
+            )
+            tracker_config_changed = False
+            segmentation_config_changed = False
             
         ret, frame = cap.read()
         if not ret:
@@ -76,11 +93,39 @@ async def capture_loop(debug_mode=False):
         # Flip the frame horizontally for a mirror effect
         frame = cv2.flip(frame, 1)
         
+        target_size = (640, 360) if segmentation_resolution == "hd" else (320, 180)
+        
         # Process the frame
         if tracking_mode == "pose":
-            latest_data = tracker.process_frame(frame)
+            latest_data = tracker.process_frame(frame, target_size=target_size)
         else:
             latest_data = motion_det.process_frame(frame)
+        
+        # Handle segmentation stream when Silhouette FX is active
+        if segmentation_enabled:
+            mask_to_send = None
+            if segmentation_engine == "human":
+                if "segmentation_mask" in latest_data and latest_data["segmentation_mask"] is not None:
+                    mask_to_send = latest_data["segmentation_mask"]
+            else:
+                mask_to_send = bg_segmenter.process_frame(frame, target_size=target_size)
+            
+            if mask_to_send is not None:
+                _, buf = cv2.imencode('.jpg', mask_to_send, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                latest_mask_binary = buf.tobytes()
+                latest_data['has_mask'] = True
+                latest_data['is_tracking'] = True
+        else:
+            latest_mask_binary = None
+            latest_data['has_mask'] = False
+        
+        # Telemetry timestamps for watchdog
+        latest_data['server_time'] = time.time()
+        latest_data['last_render_heartbeat'] = last_render_heartbeat
+
+        # Remove raw numpy array before JSON serialization
+        if "segmentation_mask" in latest_data:
+            del latest_data["segmentation_mask"]
         
         if is_calibrating:
             # Resize for faster encoding and smaller payload
@@ -111,10 +156,10 @@ async def capture_loop(debug_mode=False):
                     print(f"Auto-calibration successful: {marker_centers}")
         
         if debug_mode:
-            if latest_data["is_tracking"]:
+            if latest_data.get("is_tracking", False):
                 h, w, _ = frame.shape
                 for key in ["left_hand", "right_hand", "left_foot", "right_foot", "center_of_mass"]:
-                    pt = latest_data[key]
+                    pt = latest_data.get(key)
                     if pt:
                         cx, cy = int(pt["x"] * w), int(pt["y"] * h)
                         cv2.circle(frame, (cx, cy), 10, (0, 255, 0), -1)
@@ -139,11 +184,19 @@ async def websocket_receive(websocket):
     """
     global current_camera_index, camera_changed, is_calibrating
     global tracking_mode, tracking_mode_changed, tracker_config, tracker_config_changed, is_auto_calibrating
+    global segmentation_enabled, segmentation_engine, segmentation_resolution, segmentation_config_changed
+    global last_render_heartbeat, bg_segmenter
     try:
         async for message in websocket:
             try:
                 data = json.loads(message)
-                if data.get("type") == "set_camera":
+                if data.get("type") == "heartbeat":
+                    last_render_heartbeat = time.time()
+                elif data.get("type") == "set_calibration_corners":
+                    corners = data.get("corners")
+                    if corners and len(corners) == 4:
+                        bg_segmenter.set_projection_corners(corners)
+                elif data.get("type") == "set_camera":
                     new_index = data.get("index")
                     if new_index is not None and new_index != current_camera_index:
                         print(f"Received request to change camera to {new_index}")
@@ -166,6 +219,19 @@ async def websocket_receive(websocket):
                 elif data.get("type") == "start_auto_calibrate":
                     is_auto_calibrating = True
                     print("Auto-calibration started, looking for ArUco markers...")
+                elif data.get("type") == "set_segmentation_config":
+                    if "enabled" in data:
+                        new_enabled = bool(data["enabled"])
+                        if new_enabled != segmentation_enabled:
+                            segmentation_enabled = new_enabled
+                            segmentation_config_changed = True
+                    if "engine" in data:
+                        segmentation_engine = str(data["engine"])
+                    if "resolution" in data:
+                        segmentation_resolution = str(data["resolution"])
+                    if "corners" in data:
+                        bg_segmenter.set_projection_corners(data["corners"])
+                    print(f"Segmentation config updated: enabled={segmentation_enabled}, engine={segmentation_engine}, resolution={segmentation_resolution}")
             except json.JSONDecodeError:
                 pass
     except websockets.exceptions.ConnectionClosed:
@@ -204,8 +270,13 @@ async def websocket_handler(websocket, path=None):
     
     try:
         while True:
-            # Broadcast the latest data at ~60fps
+            # Broadcast the latest telemetry data at ~60fps
             await websocket.send(json.dumps(latest_data))
+            
+            # Broadcast binary JPEG mask frame if active
+            if segmentation_enabled and latest_mask_binary is not None:
+                await websocket.send(latest_mask_binary)
+                
             await asyncio.sleep(1/60)
     except websockets.exceptions.ConnectionClosed:
         print("Client disconnected")

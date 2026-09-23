@@ -14,11 +14,26 @@ const labelStyle = {
   marginBottom: '4px'
 }
 
+const COLOR_SWATCHES = [
+  { name: 'Cyan', color: '#00f5ff' },
+  { name: 'Magenta', color: '#ff007f' },
+  { name: 'Gold', color: '#ffd700' },
+  { name: 'Emerald', color: '#00ff66' },
+  { name: 'Violet', color: '#9d4edd' },
+  { name: 'Orange', color: '#ff5400' },
+]
+
 export function ControlPanel() {
   const { 
     currentMode, setMode, trackingStatus, activeCamera, setActiveCamera,
     trackingMode, setTrackingMode, trackerThresholds, setTrackerThresholds,
-    advancedOpen, toggleAdvanced, cameras
+    advancedOpen, toggleAdvanced, cameras,
+    silhouetteEngine, setSilhouetteEngine,
+    silhouetteResolution, setSilhouetteResolution,
+    silhouetteEffect, setSilhouetteEffect,
+    silhouetteColor, setSilhouetteColor,
+    silhouetteRainbow, setSilhouetteRainbow,
+    silhouetteTrailDecay, setSilhouetteTrailDecay
   } = useStore()
 
   const updateThreshold = (key: 'detection' | 'presence' | 'tracking', value: number) => {
@@ -187,7 +202,219 @@ export function ControlPanel() {
         >
           Sandy Shore ripples
         </button>
+
+        <button 
+          onClick={() => setMode('SilhouetteFX')}
+          style={{
+            padding: '10px 15px',
+            backgroundColor: currentMode === 'SilhouetteFX' ? '#8b5cf6' : 'rgba(255,255,255,0.1)',
+            border: currentMode === 'SilhouetteFX' ? '1px solid #a78bfa' : 'none',
+            borderRadius: '6px',
+            color: 'white',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            textAlign: 'left',
+            fontWeight: currentMode === 'SilhouetteFX' ? 'bold' : 'normal'
+          }}
+        >
+          Silhouette FX
+        </button>
       </div>
+
+      {/* Silhouette FX Contextual Controls */}
+      {currentMode === 'SilhouetteFX' && (
+        <div style={{
+          marginTop: '15px',
+          padding: '12px',
+          background: 'rgba(139, 92, 246, 0.12)',
+          border: '1px solid rgba(139, 92, 246, 0.35)',
+          borderRadius: '8px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px'
+        }}>
+          <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#c4b5fd', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Silhouette FX Settings
+          </div>
+
+          {/* Engine Selector */}
+          <div>
+            <div style={labelStyle}><span>Segmentation Engine</span></div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+              <button
+                onClick={() => setSilhouetteEngine('human')}
+                style={{
+                  padding: '6px 8px',
+                  fontSize: '0.75rem',
+                  backgroundColor: silhouetteEngine === 'human' ? '#8b5cf6' : 'rgba(255,255,255,0.1)',
+                  border: 'none',
+                  borderRadius: '4px',
+                  color: 'white',
+                  cursor: 'pointer'
+                }}
+              >
+                Human (AI 4-Pose)
+              </button>
+              <button
+                onClick={() => setSilhouetteEngine('object')}
+                style={{
+                  padding: '6px 8px',
+                  fontSize: '0.75rem',
+                  backgroundColor: silhouetteEngine === 'object' ? '#8b5cf6' : 'rgba(255,255,255,0.1)',
+                  border: 'none',
+                  borderRadius: '4px',
+                  color: 'white',
+                  cursor: 'pointer'
+                }}
+              >
+                Object / Motion (MOG2)
+              </button>
+            </div>
+          </div>
+
+          {/* Resolution Selector */}
+          <div>
+            <div style={labelStyle}><span>Stream Quality</span></div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+              <button
+                onClick={() => setSilhouetteResolution('performance')}
+                style={{
+                  padding: '6px 8px',
+                  fontSize: '0.75rem',
+                  backgroundColor: silhouetteResolution === 'performance' ? '#8b5cf6' : 'rgba(255,255,255,0.1)',
+                  border: 'none',
+                  borderRadius: '4px',
+                  color: 'white',
+                  cursor: 'pointer'
+                }}
+              >
+                Performance (320p)
+              </button>
+              <button
+                onClick={() => setSilhouetteResolution('hd')}
+                style={{
+                  padding: '6px 8px',
+                  fontSize: '0.75rem',
+                  backgroundColor: silhouetteResolution === 'hd' ? '#8b5cf6' : 'rgba(255,255,255,0.1)',
+                  border: 'none',
+                  borderRadius: '4px',
+                  color: 'white',
+                  cursor: 'pointer'
+                }}
+              >
+                HD (640p)
+              </button>
+            </div>
+          </div>
+
+          {/* Visual Effect Mode */}
+          <div>
+            <div style={labelStyle}><span>Visual Preset</span></div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
+              {[
+                { id: 'aura', label: 'Neon Aura' },
+                { id: 'cosmic', label: 'Cosmic Fill' },
+                { id: 'echo', label: 'Motion Echo' },
+                { id: 'sparks', label: 'Edge Sparks' },
+                { id: 'combined', label: 'Combined' },
+              ].map((fx) => (
+                <button
+                  key={fx.id}
+                  onClick={() => setSilhouetteEffect(fx.id as any)}
+                  style={{
+                    padding: '6px 4px',
+                    fontSize: '0.7rem',
+                    backgroundColor: silhouetteEffect === fx.id ? '#8b5cf6' : 'rgba(255,255,255,0.1)',
+                    border: 'none',
+                    borderRadius: '4px',
+                    color: 'white',
+                    cursor: 'pointer',
+                    textAlign: 'center'
+                  }}
+                >
+                  {fx.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Color Swatch Grid & Rainbow Toggle */}
+          <div>
+            <div style={labelStyle}>
+              <span>Color Palette</span>
+              <span style={{ color: silhouetteRainbow ? '#c4b5fd' : silhouetteColor, fontWeight: 'bold' }}>
+                {silhouetteRainbow ? 'Rainbow' : silhouetteColor}
+              </span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '6px', marginBottom: '8px' }}>
+              {COLOR_SWATCHES.map((swatch) => (
+                <button
+                  key={swatch.color}
+                  onClick={() => setSilhouetteColor(swatch.color)}
+                  title={swatch.name}
+                  style={{
+                    height: '24px',
+                    backgroundColor: swatch.color,
+                    border: (!silhouetteRainbow && silhouetteColor.toLowerCase() === swatch.color.toLowerCase()) ? '2px solid white' : '1px solid rgba(255,255,255,0.3)',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    boxShadow: (!silhouetteRainbow && silhouetteColor.toLowerCase() === swatch.color.toLowerCase()) ? `0 0 8px ${swatch.color}` : 'none'
+                  }}
+                />
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                onClick={() => setSilhouetteRainbow(!silhouetteRainbow)}
+                style={{
+                  flex: 1,
+                  padding: '6px',
+                  fontSize: '0.75rem',
+                  background: silhouetteRainbow ? 'linear-gradient(90deg, #ff007f, #ffd700, #00f5ff)' : 'rgba(255,255,255,0.1)',
+                  border: 'none',
+                  borderRadius: '4px',
+                  color: 'white',
+                  fontWeight: silhouetteRainbow ? 'bold' : 'normal',
+                  cursor: 'pointer'
+                }}
+              >
+                Rainbow Cycle
+              </button>
+              <input
+                type="color"
+                value={silhouetteColor}
+                onChange={(e) => setSilhouetteColor(e.target.value)}
+                title="Custom Color Picker"
+                style={{
+                  width: '32px',
+                  height: '28px',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  backgroundColor: 'transparent'
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Trail Decay Slider */}
+          <div>
+            <div style={labelStyle}>
+              <span>Echo Trail Decay</span>
+              <span>{Math.round(silhouetteTrailDecay * 100)}%</span>
+            </div>
+            <input
+              type="range"
+              min="0.80"
+              max="0.98"
+              step="0.01"
+              value={silhouetteTrailDecay}
+              onChange={(e) => setSilhouetteTrailDecay(parseFloat(e.target.value))}
+              style={sliderStyle}
+            />
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '20px' }}>
         <h3 style={{ margin: '0', fontSize: '0.9rem', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '1px' }}>Camera Source</h3>

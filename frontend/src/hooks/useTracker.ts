@@ -20,6 +20,11 @@ export interface TrackingData {
   left_foot: Point3D | null
   right_foot: Point3D | null
   frame?: string
+  mask?: string
+  maskBitmap?: ImageBitmap
+  has_mask?: boolean
+  server_time?: number
+  last_render_heartbeat?: number
   auto_calibrate_result?: { x: number, y: number }[]
 }
 
@@ -50,6 +55,7 @@ export function useTracker() {
 
     const connect = () => {
       ws = new WebSocket('ws://' + window.location.hostname + ':8765')
+      ws.binaryType = 'arraybuffer'
 
       ws.onopen = () => {
         console.log('Connected to tracking server')
@@ -58,9 +64,43 @@ export function useTracker() {
             ws.send(JSON.stringify(msg))
           }
         })
+
+        const state = useStore.getState()
+        // Sync projection corners to backend on connection for dynamic feedback masking
+        if (state.calibrationCorners && ws?.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'set_calibration_corners',
+            corners: state.calibrationCorners
+          }))
+        }
+
+        // Sync segmentation state on initial connection if in SilhouetteFX mode
+        if (state.currentMode === 'SilhouetteFX' && ws?.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'set_segmentation_config',
+            enabled: true,
+            engine: state.silhouetteEngine,
+            resolution: state.silhouetteResolution,
+            corners: state.calibrationCorners
+          }))
+        }
       }
 
       ws.onmessage = (event) => {
+        // Binary frame: compressed JPEG segmentation mask
+        if (event.data instanceof ArrayBuffer) {
+          const blob = new Blob([event.data], { type: 'image/jpeg' })
+          createImageBitmap(blob).then((bitmap) => {
+            const prev = globalTrackingDataRef.current.maskBitmap
+            if (prev && prev !== bitmap) {
+              prev.close()
+            }
+            globalTrackingDataRef.current.maskBitmap = bitmap
+            globalTrackingDataRef.current.is_tracking = true
+          }).catch(() => {})
+          return
+        }
+
         try {
           const rawData = JSON.parse(event.data)
           if (rawData.type === 'camera_list') {
@@ -69,8 +109,8 @@ export function useTracker() {
           }
           const state = useStore.getState()
           
-          // Clone the data so we can mutate the coordinates
-          const data = { ...rawData }
+          // Clone the data and preserve current maskBitmap
+          const data = { ...rawData, maskBitmap: globalTrackingDataRef.current.maskBitmap }
 
           // Apply homography matrix unless we are in calibration mode
           if (!state.isCalibrating && data.is_tracking) {
@@ -98,25 +138,21 @@ export function useTracker() {
             data.right_hand = mapPoint(data.right_hand)
             data.left_foot = mapPoint(data.left_foot)
             data.right_foot = mapPoint(data.right_foot)
-            
-            // If all limbs clipped, mark as not tracking
-            if (!data.center_of_mass && !data.left_hand && !data.right_hand && !data.left_foot && !data.right_foot) {
+
+            // If all landmarks were clipped out of bounds, drop is_tracking
+            if (!data.center_of_mass && !data.left_hand && !data.right_hand && !data.left_foot && !data.right_foot && !data.mask && !data.maskBitmap) {
               data.is_tracking = false
             }
           }
 
-          // Handle auto-calibration result from backend
-          if (data.auto_calibrate_result) {
-            const corners = data.auto_calibrate_result
-            if (corners.length === 4) {
-              useStore.getState().setCalibrationCorners(corners)
-              console.log('Auto-calibration applied:', corners)
-            }
+          // Handle auto-calibration results from OpenCV
+          if (data.auto_calibrate_result && Array.isArray(data.auto_calibrate_result) && data.auto_calibrate_result.length === 4) {
+            state.setCalibrationCorners(data.auto_calibrate_result)
           }
 
+          // Mutate the ref directly for 0-latency access in useFrame
           globalTrackingDataRef.current = data
-          
-          // Update zustand store for UI indicator if tracking status changes
+
           // Use store.getState() to avoid unnecessary hook dependency
           if (state.trackingStatus !== data.is_tracking) {
              setTrackingStatus(data.is_tracking)
@@ -140,8 +176,16 @@ export function useTracker() {
 
     connect()
 
+    // Send periodic render heartbeats every 2 seconds
+    const heartbeatInterval = window.setInterval(() => {
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'heartbeat', source: 'render' }))
+      }
+    }, 2000)
+
     return () => {
       wsConnected = false
+      clearInterval(heartbeatInterval)
       clearTimeout(reconnectTimeout)
       if (ws) {
         ws.close()

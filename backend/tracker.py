@@ -1,26 +1,31 @@
 import cv2
+import numpy as np
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 class SkeletonTracker:
-    def __init__(self, detection_confidence=0.3, presence_confidence=0.3, tracking_confidence=0.3):
-        # Using the new MediaPipe Tasks API since mp.solutions is deprecated/missing in new builds
+    def __init__(self, detection_confidence=0.3, presence_confidence=0.3, tracking_confidence=0.3, enable_segmentation=False, num_poses=4):
+        self.enable_segmentation = enable_segmentation
+        self.num_poses = num_poses
+        
         base_options = python.BaseOptions(model_asset_path='pose_landmarker_full.task')
         options = vision.PoseLandmarkerOptions(
             base_options=base_options,
             running_mode=vision.RunningMode.VIDEO,
             min_pose_detection_confidence=detection_confidence,
             min_pose_presence_confidence=presence_confidence,
-            min_tracking_confidence=tracking_confidence
+            min_tracking_confidence=tracking_confidence,
+            num_poses=num_poses if enable_segmentation else 1,
+            output_segmentation_masks=enable_segmentation
         )
         self.landmarker = vision.PoseLandmarker.create_from_options(options)
         self._frame_count = 0
 
-    def process_frame(self, frame):
+    def process_frame(self, frame, target_size=(320, 180)):
         """
         Takes an OpenCV BGR frame, converts to RGB, and extracts coordinates.
-        Returns a dictionary with normalized coordinates.
+        If segmentation is enabled, also extracts and combines neural segmentation masks.
         """
         # Convert the BGR image to RGB
         image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -40,17 +45,13 @@ class SkeletonTracker:
             "right_hand": None,
             "left_foot": None,
             "right_foot": None,
+            "segmentation_mask": None
         }
         
+        # 1. Process Landmark Coordinates (from primary person or closest pose)
         if results.pose_landmarks and len(results.pose_landmarks) > 0:
             landmarks = results.pose_landmarks[0]
             data["is_tracking"] = True
-            
-            # Landmark indices
-            # 15: left wrist, 16: right wrist
-            # 27: left ankle, 28: right ankle
-            # 11: left shoulder, 12: right shoulder
-            # 23: left hip, 24: right hip
             
             l_wrist = landmarks[15]
             r_wrist = landmarks[16]
@@ -67,10 +68,26 @@ class SkeletonTracker:
             data["left_foot"] = {"x": l_ankle.x, "y": l_ankle.y, "z": l_ankle.z, "visibility": getattr(l_ankle, 'visibility', 1.0)}
             data["right_foot"] = {"x": r_ankle.x, "y": r_ankle.y, "z": r_ankle.z, "visibility": getattr(r_ankle, 'visibility', 1.0)}
             
-            # Approximate center of mass using average of shoulders and hips
             com_x = (l_shoulder.x + r_shoulder.x + l_hip.x + r_hip.x) / 4.0
             com_y = (l_shoulder.y + r_shoulder.y + l_hip.y + r_hip.y) / 4.0
             com_z = (l_shoulder.z + r_shoulder.z + l_hip.z + r_hip.z) / 4.0
             data["center_of_mass"] = {"x": com_x, "y": com_y, "z": com_z}
+            
+        # 2. Extract and combine segmentation masks from all detected people
+        if self.enable_segmentation and results.segmentation_masks and len(results.segmentation_masks) > 0:
+            first_view = results.segmentation_masks[0].numpy_view()
+            combined_mask = np.zeros(first_view.shape, dtype=np.float32)
+            
+            for mask_img in results.segmentation_masks:
+                combined_mask = np.maximum(combined_mask, mask_img.numpy_view())
+                
+            # Convert float confidence [0.0, 1.0] to uint8 [0, 255]
+            uint8_mask = (np.clip(combined_mask, 0.0, 1.0) * 255).astype(np.uint8)
+            
+            if (uint8_mask.shape[1], uint8_mask.shape[0]) != target_size:
+                uint8_mask = cv2.resize(uint8_mask, target_size, interpolation=cv2.INTER_LINEAR)
+                
+            data["segmentation_mask"] = uint8_mask
+            data["is_tracking"] = True
             
         return data
