@@ -74,6 +74,17 @@ const loadCorners = (): Point2D[] => {
   return defaultCorners
 }
 
+const loadActiveCamera = (): number => {
+  const saved = localStorage.getItem('activeCamera')
+  if (saved !== null) {
+    const parsed = parseInt(saved, 10)
+    if (!isNaN(parsed) && parsed >= 0) {
+      return parsed
+    }
+  }
+  return 0
+}
+
 export const useStore = create<AppState>((set) => ({
   currentMode: 'Asteroids',
   setMode: (mode) => set((state) => {
@@ -89,8 +100,16 @@ export const useStore = create<AppState>((set) => ({
   }),
   trackingStatus: false,
   setTrackingStatus: (status) => set({ trackingStatus: status }),
-  activeCamera: 0,
-  setActiveCamera: (index) => set({ activeCamera: index }),
+  activeCamera: loadActiveCamera(),
+  setActiveCamera: (index) => {
+    localStorage.setItem('activeCamera', String(index))
+    set((state) => {
+      if (state.emitMessage) {
+        state.emitMessage({ type: 'set_camera', index })
+      }
+      return { activeCamera: index }
+    })
+  },
   emitMessage: null,
   setEmitMessage: (fn) => set({ emitMessage: fn }),
   isCalibrating: false,
@@ -159,6 +178,9 @@ let isReceiving = false
 bc.onmessage = (e) => {
   if (e.data.type === 'SYNC_STATE') {
     isReceiving = true
+    if (e.data.state && e.data.state.activeCamera !== undefined) {
+      localStorage.setItem('activeCamera', String(e.data.state.activeCamera))
+    }
     useStore.setState(e.data.state)
     isReceiving = false
   }

@@ -10,6 +10,26 @@ import base64
 import argparse
 import platform
 import time
+import os
+
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "camera_config.json")
+
+def load_saved_camera():
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, "r") as f:
+                cfg = json.load(f)
+                return int(cfg.get("camera_index", 0))
+        except Exception:
+            pass
+    return None
+
+def save_camera(index):
+    try:
+        with open(CONFIG_PATH, "w") as f:
+            json.dump({"camera_index": int(index)}, f)
+    except Exception as e:
+        print(f"Failed to save camera config: {e}")
 
 # Global variables
 latest_data = {"is_tracking": False}
@@ -49,8 +69,10 @@ async def capture_loop(debug_mode=False):
         # If camera changed or not initialized, open the new camera
         if cap is None or camera_changed:
             if cap is not None:
-                print(f"Releasing camera {cap}")
+                print(f"Releasing camera on index {current_camera_index}")
                 cap.release()
+                cap = None
+                await asyncio.sleep(0.1)
                 
             print(f"Starting camera capture on index {current_camera_index}")
             
@@ -59,15 +81,19 @@ async def capture_loop(debug_mode=False):
                 cap = cv2.VideoCapture(current_camera_index, cv2.CAP_DSHOW)
                 if not cap.isOpened():
                     print("DirectShow failed to open camera. Falling back to default Windows media backend...")
-                    cap.release()
+                    if cap is not None:
+                        cap.release()
                     cap = cv2.VideoCapture(current_camera_index)
             else:
                 cap = cv2.VideoCapture(current_camera_index)
 
-            # Try to set 60fps and HD resolution if possible
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-            cap.set(cv2.CAP_PROP_FPS, 60)
+            if cap is not None and cap.isOpened():
+                # Set buffer size to 1 to reduce lag
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                # Try to set 60fps and HD resolution if possible
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+                cap.set(cv2.CAP_PROP_FPS, 60)
             
             camera_changed = False
 
@@ -83,12 +109,19 @@ async def capture_loop(debug_mode=False):
             )
             tracker_config_changed = False
             segmentation_config_changed = False
-            
-        ret, frame = cap.read()
-        if not ret:
-            print(f"Failed to grab frame from camera {current_camera_index}. Retrying...")
-            await asyncio.sleep(1)
+
+        if cap is None or not cap.isOpened():
+            latest_data['camera_error'] = f"Camera {current_camera_index} could not be opened."
+            await asyncio.sleep(0.5)
             continue
+
+        ret, frame = cap.read()
+        if not ret or frame is None:
+            latest_data['camera_error'] = f"Failed to grab frame from camera {current_camera_index}."
+            await asyncio.sleep(0.5)
+            continue
+        elif 'camera_error' in latest_data:
+            del latest_data['camera_error']
             
         # Flip the frame horizontally for a mirror effect
         frame = cv2.flip(frame, 1)
@@ -127,11 +160,15 @@ async def capture_loop(debug_mode=False):
         if "segmentation_mask" in latest_data:
             del latest_data["segmentation_mask"]
         
+        latest_data['active_camera'] = current_camera_index
+
         if is_calibrating:
             # Resize for faster encoding and smaller payload
             small_frame = cv2.resize(frame, (640, 360))
-            _, buffer = cv2.imencode('.jpg', small_frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
+            _, buffer = cv2.imencode('.jpg', small_frame, [cv2.IMWRITE_JPEG_QUALITY, 55])
             latest_data['frame'] = 'data:image/jpeg;base64,' + base64.b64encode(buffer).decode('utf-8')
+        elif 'frame' in latest_data:
+            del latest_data['frame']
 
         if is_auto_calibrating:
             aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_4X4_50)
@@ -198,10 +235,16 @@ async def websocket_receive(websocket):
                         bg_segmenter.set_projection_corners(corners)
                 elif data.get("type") == "set_camera":
                     new_index = data.get("index")
-                    if new_index is not None and new_index != current_camera_index:
-                        print(f"Received request to change camera to {new_index}")
-                        current_camera_index = new_index
-                        camera_changed = True
+                    if new_index is not None:
+                        try:
+                            new_index = int(new_index)
+                            save_camera(new_index)
+                            if new_index != current_camera_index:
+                                print(f"Received request to change camera to {new_index}")
+                                current_camera_index = new_index
+                                camera_changed = True
+                        except (ValueError, TypeError) as e:
+                            print(f"Invalid camera index received: {e}")
                 elif data.get("type") == "set_calibrating":
                     is_calibrating = bool(data.get("value"))
                     print(f"Calibration mode set to {is_calibrating}")
@@ -251,7 +294,7 @@ def get_camera_list():
     
     # Fallback if empty or not Windows
     if not cameras:
-        for idx in range(10):
+        for idx in range(12):
             cameras.append({"index": idx, "name": f"Camera {idx}"})
     return cameras
 
@@ -263,7 +306,11 @@ async def websocket_handler(websocket, path=None):
     
     # Send current camera list to the client
     cameras = get_camera_list()
-    await websocket.send(json.dumps({"type": "camera_list", "cameras": cameras}))
+    await websocket.send(json.dumps({
+        "type": "camera_list", 
+        "cameras": cameras,
+        "current_camera": current_camera_index
+    }))
     
     # Start the receive task concurrently
     receive_task = asyncio.create_task(websocket_receive(websocket))
@@ -286,15 +333,22 @@ async def websocket_handler(websocket, path=None):
 async def main():
     global current_camera_index
     parser = argparse.ArgumentParser(description='Run tracking backend.')
-    parser.add_argument('--camera', type=int, default=0, help='Camera input index (default: 0)')
+    parser.add_argument('--camera', type=int, default=None, help='Camera input index')
     parser.add_argument('--debug', action='store_true', help='Show a debug window with the camera feed and tracking dots')
     args = parser.parse_args()
     
-    current_camera_index = args.camera
+    saved_index = load_saved_camera()
+    if args.camera is not None:
+        current_camera_index = args.camera
+    elif saved_index is not None:
+        current_camera_index = saved_index
+        print(f"Loaded persistent camera index from config: {current_camera_index}")
+    else:
+        current_camera_index = 0
 
     # Start the websocket server
     server = await websockets.serve(websocket_handler, "0.0.0.0", 8765)
-    print("WebSocket server listening on ws://0.0.0.0:8765")
+    print(f"WebSocket server listening on ws://0.0.0.0:8765 (initial camera: {current_camera_index})")
     if args.debug:
         print("Debug mode enabled. A window will open showing the camera feed.")
     

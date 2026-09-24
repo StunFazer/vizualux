@@ -56,7 +56,10 @@ export function CalibrationUI() {
     setCalibrationCorners, 
     setIsCalibrating,
     setCalibrationStep,
-    emitMessage 
+    emitMessage,
+    activeCamera,
+    setActiveCamera,
+    cameras
   } = useStore()
 
   const [draggingIdx, setDraggingIdx] = useState<number | null>(null)
@@ -82,6 +85,27 @@ export function CalibrationUI() {
     captureCanvasRef.current.width = 640
     captureCanvasRef.current.height = 360
   }, [])
+
+  // Ensure backend is in calibration mode so it streams the 640x360 frame
+  useEffect(() => {
+    setIsCalibrating(true)
+    const sendCalib = () => {
+      const emit = useStore.getState().emitMessage
+      if (emit) {
+        emit({ type: 'set_calibrating', value: true })
+      }
+    }
+    sendCalib()
+    const timer = setInterval(sendCalib, 1000)
+    return () => {
+      clearInterval(timer)
+    }
+  }, [setIsCalibrating])
+
+  // Reset stream status when camera switches
+  useEffect(() => {
+    setHasStream(false)
+  }, [activeCamera])
 
   // Poll tracker ref every frame to pipe the base64 camera frame to imgRef
   useEffect(() => {
@@ -306,7 +330,37 @@ export function CalibrationUI() {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '12px' }}>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          {/* Camera Selection Dropdown */}
+          <div style={{ 
+            display: 'flex', alignItems: 'center', gap: '8px', 
+            background: 'rgba(255,255,255,0.06)', padding: '6px 12px', 
+            borderRadius: '8px', border: '1px solid rgba(255,255,255,0.12)' 
+          }}>
+            <label style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 600 }}>Camera:</label>
+            <select
+              value={activeCamera}
+              onChange={(e) => setActiveCamera(Number(e.target.value))}
+              style={{
+                backgroundColor: '#1e293b',
+                color: '#e2e8f0',
+                border: '1px solid #334155',
+                borderRadius: '6px',
+                padding: '6px 10px',
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+                outline: 'none',
+                maxWidth: '220px'
+              }}
+            >
+              {cameras.map((cam) => (
+                <option key={cam.index} value={cam.index} style={{ background: '#0f172a', color: 'white' }}>
+                  {cam.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {!isAutoCalibrating ? (
             <button 
               onClick={startStructuredLightCalibration}
@@ -339,6 +393,10 @@ export function CalibrationUI() {
             onClick={() => {
               setCalibrationStep(-1)
               setIsCalibrating(false)
+              const emit = useStore.getState().emitMessage
+              if (emit) {
+                emit({ type: 'set_calibrating', value: false })
+              }
             }}
             style={{ 
               padding: '12px 24px', 
@@ -361,8 +419,10 @@ export function CalibrationUI() {
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)',
           display: 'flex', flexDirection: 'column', alignItems: 'center', maxWidth: '720px', width: '100%'
         }}>
-          <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-            <span style={{ color: '#e2e8f0', fontWeight: 600, fontSize: '0.95rem' }}>Camera Tracking View</span>
+          <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <span style={{ color: '#e2e8f0', fontWeight: 600, fontSize: '0.95rem' }}>
+              Camera Tracking View <span style={{ color: '#64748b', fontSize: '0.85rem', fontWeight: 400 }}>({cameras.find(c => c.index === activeCamera)?.name || `Camera ${activeCamera}`})</span>
+            </span>
             <span style={{ color: hasStream ? '#10b981' : '#f43f5e', fontSize: '0.85rem', fontWeight: 500 }}>
               {hasStream ? 'Stream Active (640x360)' : 'Waiting for camera feed...'}
             </span>

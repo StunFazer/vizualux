@@ -66,7 +66,24 @@ export function useTracker() {
         })
 
         const state = useStore.getState()
-        // Sync projection corners to backend on connection for dynamic feedback masking
+
+        // 1. Immediately send saved camera selection to backend
+        if (ws?.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'set_camera',
+            index: state.activeCamera
+          }))
+        }
+
+        // 2. If calibrating, notify backend immediately so frame streaming starts
+        if (state.isCalibrating && ws?.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'set_calibrating',
+            value: true
+          }))
+        }
+
+        // 3. Sync projection corners to backend on connection for dynamic feedback masking
         if (state.calibrationCorners && ws?.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({
             type: 'set_calibration_corners',
@@ -74,7 +91,7 @@ export function useTracker() {
           }))
         }
 
-        // Sync segmentation state on initial connection if in SilhouetteFX mode
+        // 4. Sync segmentation state on initial connection if in SilhouetteFX mode
         if (state.currentMode === 'SilhouetteFX' && ws?.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({
             type: 'set_segmentation_config',
@@ -105,6 +122,10 @@ export function useTracker() {
           const rawData = JSON.parse(event.data)
           if (rawData.type === 'camera_list') {
             useStore.getState().setCameras(rawData.cameras)
+            const savedCam = localStorage.getItem('activeCamera')
+            if (savedCam === null && rawData.current_camera !== undefined) {
+              useStore.getState().setActiveCamera(rawData.current_camera)
+            }
             return
           }
           const state = useStore.getState()
