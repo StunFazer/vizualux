@@ -29,6 +29,8 @@ interface AppState {
   setEmitMessage: (fn: (msg: any) => void) => void
   isCalibrating: boolean
   setIsCalibrating: (val: boolean) => void
+  calibrationStep: number // -1 = manual/inactive, 0 = ambient baseline, 1 = TL, 2 = TR, 3 = BR, 4 = BL, 5 = solving
+  setCalibrationStep: (step: number) => void
   calibrationCorners: Point2D[]
   setCalibrationCorners: (corners: Point2D[]) => void
   uiVisible: boolean
@@ -96,8 +98,10 @@ export const useStore = create<AppState>((set) => ({
     if (state.emitMessage) {
       state.emitMessage({ type: 'set_calibrating', value: val })
     }
-    return { isCalibrating: val }
+    return { isCalibrating: val, calibrationStep: val ? state.calibrationStep : -1 }
   }),
+  calibrationStep: -1,
+  setCalibrationStep: (step) => set({ calibrationStep: step }),
   calibrationCorners: loadCorners(),
   setCalibrationCorners: (corners) => {
     localStorage.setItem('calibrationCorners', JSON.stringify(corners))
@@ -165,6 +169,7 @@ useStore.subscribe((state) => {
     const syncableState = {
       currentMode: state.currentMode,
       isCalibrating: state.isCalibrating,
+      calibrationStep: state.calibrationStep,
       calibrationCorners: state.calibrationCorners,
       activeCamera: state.activeCamera,
       uiVisible: state.uiVisible,
