@@ -27,6 +27,10 @@ interface AppState {
   setActiveCamera: (index: number) => void
   emitMessage: ((msg: any) => void) | null
   setEmitMessage: (fn: (msg: any) => void) => void
+  emitBinary: ((data: ArrayBuffer | Blob) => void) | null
+  setEmitBinary: (fn: (data: ArrayBuffer | Blob) => void) => void
+  isPhoneStreaming: boolean
+  setIsPhoneStreaming: (val: boolean) => void
   isCalibrating: boolean
   setIsCalibrating: (val: boolean) => void
   calibrationStep: number // -1 = manual/inactive, 0 = ambient baseline, 1 = TL, 2 = TR, 3 = BR, 4 = BL, 5 = solving
@@ -112,6 +116,10 @@ export const useStore = create<AppState>((set) => ({
   },
   emitMessage: null,
   setEmitMessage: (fn) => set({ emitMessage: fn }),
+  emitBinary: null,
+  setEmitBinary: (fn) => set({ emitBinary: fn }),
+  isPhoneStreaming: false,
+  setIsPhoneStreaming: (val) => set({ isPhoneStreaming: val }),
   isCalibrating: false,
   setIsCalibrating: (val) => set((state) => {
     if (state.emitMessage) {
@@ -144,7 +152,10 @@ export const useStore = create<AppState>((set) => ({
   }),
   advancedOpen: false,
   toggleAdvanced: () => set((state) => ({ advancedOpen: !state.advancedOpen })),
-  cameras: Array.from({ length: 10 }).map((_, i) => ({ index: i, name: `Camera ${i}` })),
+  cameras: [
+    { index: -1, name: '📱 Phone / Browser Camera (Live Stream)' },
+    ...Array.from({ length: 10 }).map((_, i) => ({ index: i, name: `Camera ${i}` }))
+  ],
   setCameras: (cameras) => set({ cameras }),
 
   // Silhouette FX State Implementation

@@ -1,4 +1,5 @@
 import { useStore } from '../../store/useStore'
+import { PhoneCameraStreamer } from './PhoneCameraStreamer'
 
 const sliderStyle = {
   width: '100%',
@@ -437,6 +438,9 @@ export function ControlPanel() {
             </option>
           ))}
         </select>
+
+        {/* Dedicated Phone / Device Camera Streamer */}
+        <PhoneCameraStreamer />
       </div>
 
       {/* Collapsible Advanced Section */}

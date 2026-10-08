@@ -1,6 +1,7 @@
 import asyncio
 import json
 import cv2
+import numpy as np
 import websockets
 from tracker import SkeletonTracker
 from motion_detector import MotionDetector
@@ -42,6 +43,11 @@ tracker_config = {"detection": 0.3, "presence": 0.3, "tracking": 0.3}
 tracker_config_changed = False
 is_auto_calibrating = False
 
+# Phone / Client Video Stream State
+latest_client_frame = None
+latest_client_frame_time = 0
+use_client_stream = False
+
 # Silhouette FX Segmentation State
 segmentation_enabled = False
 segmentation_engine = "human"  # "human" or "object"
@@ -60,42 +66,77 @@ async def capture_loop(debug_mode=False):
     global tracking_mode, tracking_mode_changed, tracker_config, tracker_config_changed, is_auto_calibrating
     global segmentation_enabled, segmentation_engine, segmentation_resolution, segmentation_config_changed
     global latest_mask_binary, last_render_heartbeat, bg_segmenter
+    global latest_client_frame, latest_client_frame_time, use_client_stream
     
     cap = None
     tracker = SkeletonTracker(enable_segmentation=segmentation_enabled)
     motion_det = MotionDetector()
     
     while True:
-        # If camera changed or not initialized, open the new camera
-        if cap is None or camera_changed:
+        # Check if using phone/browser camera stream
+        if current_camera_index == -1 or use_client_stream:
             if cap is not None:
-                print(f"Releasing camera on index {current_camera_index}")
+                print(f"Releasing hardware camera to switch to phone stream")
                 cap.release()
                 cap = None
-                await asyncio.sleep(0.1)
-                
-            print(f"Starting camera capture on index {current_camera_index}")
             
-            if platform.system() == 'Windows':
-                print(f"Using DirectShow backend for camera {current_camera_index} on Windows...")
-                cap = cv2.VideoCapture(current_camera_index, cv2.CAP_DSHOW)
-                if not cap.isOpened():
-                    print("DirectShow failed to open camera. Falling back to default Windows media backend...")
-                    if cap is not None:
-                        cap.release()
-                    cap = cv2.VideoCapture(current_camera_index)
+            now = time.time()
+            if latest_client_frame is not None and (now - latest_client_frame_time < 4.0):
+                frame = latest_client_frame.copy()
+                if 'camera_error' in latest_data:
+                    del latest_data['camera_error']
             else:
-                cap = cv2.VideoCapture(current_camera_index)
+                latest_data['camera_error'] = "Waiting for phone camera stream..."
+                latest_data['active_camera'] = -1
+                await asyncio.sleep(0.04)
+                continue
+        else:
+            # If camera changed or not initialized, open the new camera
+            if cap is None or camera_changed:
+                if cap is not None:
+                    print(f"Releasing camera on index {current_camera_index}")
+                    cap.release()
+                    cap = None
+                    await asyncio.sleep(0.1)
+                    
+                print(f"Starting camera capture on index {current_camera_index}")
+                
+                if platform.system() == 'Windows':
+                    print(f"Using DirectShow backend for camera {current_camera_index} on Windows...")
+                    cap = cv2.VideoCapture(current_camera_index, cv2.CAP_DSHOW)
+                    if not cap.isOpened():
+                        print("DirectShow failed to open camera. Falling back to default Windows media backend...")
+                        if cap is not None:
+                            cap.release()
+                        cap = cv2.VideoCapture(current_camera_index)
+                else:
+                    cap = cv2.VideoCapture(current_camera_index)
 
-            if cap is not None and cap.isOpened():
-                # Set buffer size to 1 to reduce lag
-                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                # Try to set 60fps and HD resolution if possible
-                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-                cap.set(cv2.CAP_PROP_FPS, 60)
-            
-            camera_changed = False
+                if cap is not None and cap.isOpened():
+                    # Set buffer size to 1 to reduce lag
+                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    # Try to set 60fps and HD resolution if possible
+                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+                    cap.set(cv2.CAP_PROP_FPS, 60)
+                
+                camera_changed = False
+
+            if cap is None or not cap.isOpened():
+                latest_data['camera_error'] = f"Camera {current_camera_index} could not be opened."
+                await asyncio.sleep(0.5)
+                continue
+
+            ret, frame = cap.read()
+            if not ret or frame is None:
+                latest_data['camera_error'] = f"Failed to grab frame from camera {current_camera_index}."
+                await asyncio.sleep(0.5)
+                continue
+            elif 'camera_error' in latest_data:
+                del latest_data['camera_error']
+                
+            # Flip the hardware webcam frame horizontally for a mirror effect
+            frame = cv2.flip(frame, 1)
 
         # Re-initialize tracker when thresholds or segmentation mode change
         if tracker_config_changed or segmentation_config_changed:
@@ -109,22 +150,6 @@ async def capture_loop(debug_mode=False):
             )
             tracker_config_changed = False
             segmentation_config_changed = False
-
-        if cap is None or not cap.isOpened():
-            latest_data['camera_error'] = f"Camera {current_camera_index} could not be opened."
-            await asyncio.sleep(0.5)
-            continue
-
-        ret, frame = cap.read()
-        if not ret or frame is None:
-            latest_data['camera_error'] = f"Failed to grab frame from camera {current_camera_index}."
-            await asyncio.sleep(0.5)
-            continue
-        elif 'camera_error' in latest_data:
-            del latest_data['camera_error']
-            
-        # Flip the frame horizontally for a mirror effect
-        frame = cv2.flip(frame, 1)
         
         target_size = (640, 360) if segmentation_resolution == "hd" else (320, 180)
         
@@ -223,12 +248,36 @@ async def websocket_receive(websocket):
     global tracking_mode, tracking_mode_changed, tracker_config, tracker_config_changed, is_auto_calibrating
     global segmentation_enabled, segmentation_engine, segmentation_resolution, segmentation_config_changed
     global last_render_heartbeat, bg_segmenter
+    global latest_client_frame, latest_client_frame_time, use_client_stream
     try:
         async for message in websocket:
+            if isinstance(message, bytes):
+                # Binary JPEG frame from phone or browser camera
+                try:
+                    np_arr = np.frombuffer(message, np.uint8)
+                    decoded = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+                    if decoded is not None:
+                        latest_client_frame = decoded
+                        latest_client_frame_time = time.time()
+                        if not use_client_stream and current_camera_index == -1:
+                            use_client_stream = True
+                except Exception as ex:
+                    print(f"Error decoding client frame: {ex}")
+                continue
+
             try:
                 data = json.loads(message)
                 if data.get("type") == "heartbeat":
                     last_render_heartbeat = time.time()
+                elif data.get("type") == "client_camera_status":
+                    streaming = bool(data.get("streaming", False))
+                    use_client_stream = streaming
+                    if streaming:
+                        current_camera_index = -1
+                        save_camera(-1)
+                        print("Phone camera stream active")
+                    else:
+                        print("Phone camera stream paused")
                 elif data.get("type") == "set_calibration_corners":
                     corners = data.get("corners")
                     if corners and len(corners) == 4:
@@ -242,7 +291,11 @@ async def websocket_receive(websocket):
                             if new_index != current_camera_index:
                                 print(f"Received request to change camera to {new_index}")
                                 current_camera_index = new_index
-                                camera_changed = True
+                                if new_index == -1:
+                                    use_client_stream = True
+                                else:
+                                    use_client_stream = False
+                                    camera_changed = True
                         except (ValueError, TypeError) as e:
                             print(f"Invalid camera index received: {e}")
                 elif data.get("type") == "set_calibrating":
@@ -281,7 +334,9 @@ async def websocket_receive(websocket):
         pass
 
 def get_camera_list():
-    cameras = []
+    cameras = [
+        {"index": -1, "name": "📱 Phone / Browser Camera (Live Stream)"}
+    ]
     if platform.system() == 'Windows':
         try:
             from pygrabber.dshow_graph import FilterGraph
@@ -293,7 +348,7 @@ def get_camera_list():
             print(f"Error listing cameras via pygrabber: {e}")
     
     # Fallback if empty or not Windows
-    if not cameras:
+    if len(cameras) == 1:
         for idx in range(12):
             cameras.append({"index": idx, "name": f"Camera {idx}"})
     return cameras

@@ -52,9 +52,14 @@ export function useTracker() {
     let reconnectTimeout: number
 
     const setEmitMessage = useStore.getState().setEmitMessage
+    const setEmitBinary = useStore.getState().setEmitBinary
 
     const connect = () => {
-      ws = new WebSocket('ws://' + window.location.hostname + ':8765')
+      const isHttps = window.location.protocol === 'https:'
+      const wsProtocol = isHttps ? 'wss:' : 'ws:'
+      // Use Vite WebSocket proxy endpoint /ws (supports both HTTPS/WSS and HTTP/WS)
+      const wsUrl = `${wsProtocol}//${window.location.host}/ws`
+      ws = new WebSocket(wsUrl)
       ws.binaryType = 'arraybuffer'
 
       ws.onopen = () => {
@@ -62,6 +67,12 @@ export function useTracker() {
         setEmitMessage((msg: any) => {
           if (ws?.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify(msg))
+          }
+        })
+
+        setEmitBinary((data: ArrayBuffer | Blob) => {
+          if (ws?.readyState === WebSocket.OPEN) {
+            ws.send(data)
           }
         })
 
