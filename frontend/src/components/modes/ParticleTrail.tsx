@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber'
 import { useTexture } from '@react-three/drei'
 import * as THREE from 'three'
 import { useTracker } from '../../hooks/useTracker'
+import { useStore } from '../../store/useStore'
 
 const MAX_PARTICLES = 250
 const PARTICLE_LIFESPAN = 1.2
@@ -40,6 +41,8 @@ export function ParticleTrail() {
       toWorld(data.right_foot),
     ]
 
+    const trailStyle = useStore.getState().particleTrailStyle || 'rainbow'
+
     // 1. Emit trail particles from active tracking points
     activePoints.forEach((pt) => {
       if (!pt) return
@@ -47,9 +50,34 @@ export function ParticleTrail() {
       // Emit 2 particles per point per frame
       if (particlesRef.current.length < MAX_PARTICLES) {
         for (let i = 0; i < 2; i++) {
-          // Cycle through HSL colors based on elapsed time to create a rainbow effect
-          const hue = (state.clock.elapsedTime * 0.15 + (i * 0.02)) % 1.0
-          const color = new THREE.Color().setHSL(hue, 1.0, 0.6)
+          let color: THREE.Color
+          let vel = new THREE.Vector3(randomRange(-0.6, 0.6), randomRange(-0.6, 0.6), 0)
+          let life = PARTICLE_LIFESPAN
+
+          if (trailStyle === 'fireflies') {
+            const hue = 0.12 + randomRange(-0.04, 0.04)
+            color = new THREE.Color().setHSL(hue, 1.0, 0.65)
+            vel = new THREE.Vector3(randomRange(-0.3, 0.3), randomRange(0.2, 0.8), 0)
+            life = 2.0
+          } else if (trailStyle === 'plasma') {
+            const hue = Math.random() < 0.5 ? 0.52 : 0.78
+            color = new THREE.Color().setHSL(hue, 1.0, 0.7)
+            vel = new THREE.Vector3(randomRange(-1.2, 1.2), randomRange(-1.2, 1.2), 0)
+            life = 0.8
+          } else if (trailStyle === 'embers') {
+            const hue = randomRange(0.02, 0.09)
+            color = new THREE.Color().setHSL(hue, 1.0, 0.6)
+            vel = new THREE.Vector3(randomRange(-0.4, 0.4), randomRange(0.5, 1.4), 0)
+            life = 1.6
+          } else if (trailStyle === 'aurora') {
+            const hue = randomRange(0.35, 0.65)
+            color = new THREE.Color().setHSL(hue, 0.9, 0.65)
+            vel = new THREE.Vector3(randomRange(-0.5, 0.5), randomRange(0.1, 0.5), 0)
+            life = 1.8
+          } else {
+            const hue = (state.clock.elapsedTime * 0.15 + (i * 0.02)) % 1.0
+            color = new THREE.Color().setHSL(hue, 1.0, 0.6)
+          }
 
           particlesRef.current.push({
             id: Date.now() + Math.random(),
@@ -58,16 +86,12 @@ export function ParticleTrail() {
               randomRange(-0.15, 0.15),
               0
             )),
-            vel: new THREE.Vector3(
-              randomRange(-0.6, 0.6),
-              randomRange(-0.6, 0.6),
-              0
-            ),
-            color: color,
+            vel,
+            color,
             scale: randomRange(0.4, 0.6),
             opacity: 1.0,
-            life: PARTICLE_LIFESPAN,
-            maxLife: PARTICLE_LIFESPAN
+            life,
+            maxLife: life
           })
         }
       }

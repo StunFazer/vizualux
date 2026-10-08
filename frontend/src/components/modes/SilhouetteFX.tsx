@@ -24,12 +24,12 @@ uniform vec3 u_coeffsY;
 uniform vec3 u_coeffsW;
 uniform vec3 u_color;
 uniform float u_time;
-uniform int u_effect; // 0: aura, 1: cosmic, 2: echo, 3: sparks, 4: combined
+uniform int u_effect;
 uniform bool u_rainbow;
 
 varying vec2 vUv;
 
-// Simple procedural hash and noise for cosmic stars
+// Simple procedural hash and noise
 float hash(vec2 p) {
   return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
 }
@@ -43,6 +43,26 @@ float noise(vec2 p) {
   float c = hash(i + vec2(0.0, 1.0));
   float d = hash(i + vec2(1.0, 1.0));
   return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+vec2 voronoi(vec2 x) {
+  vec2 n = floor(x);
+  vec2 f = fract(x);
+  vec2 mg = vec2(0.0);
+  float md = 8.0;
+  for (int j = -1; j <= 1; j++) {
+    for (int i = -1; i <= 1; i++) {
+      vec2 g = vec2(float(i), float(j));
+      vec2 o = hash(n + g + vec2(1.23, 4.56)) * 0.5 + 0.25;
+      vec2 r = g + o - f;
+      float d = dot(r, r);
+      if (d < md) {
+        md = d;
+        mg = g;
+      }
+    }
+  }
+  return vec2(sqrt(md), hash(n + mg));
 }
 
 vec3 hsv2rgb(vec3 c) {
@@ -105,7 +125,96 @@ void main() {
     echoColor = trailTint * trailVal * 0.8;
   }
 
-  // 6. Combine active visual effects according to preset
+  // 6. Liquid Chrome / Molten Mercury
+  vec3 chromeColor = vec3(0.0);
+  if (maskVal > 0.2) {
+    vec3 normal = normalize(vec3((right - left) * 5.0, (top - bottom) * 5.0, 1.0));
+    vec3 viewDir = normalize(vec3(camUv - 0.5, 0.8));
+    vec3 refl = reflect(-viewDir, normal);
+    float spec = pow(max(0.0, dot(refl, vec3(0.577))), 16.0);
+    float sheen = sin(refl.x * 10.0 + u_time * 2.0) * cos(refl.y * 10.0 - u_time * 2.0);
+    vec3 metallic = mix(vec3(0.85, 0.9, 1.0), baseColor, 0.3) * (0.6 + 0.4 * sheen) + vec3(spec * 1.5);
+    chromeColor = metallic * maskVal;
+  }
+
+  // 7. Digital Matrix Rain
+  vec3 matrixColor = vec3(0.0);
+  if (maskVal > 0.2) {
+    vec2 mGrid = floor(camUv * vec2(45.0, 30.0));
+    float speed = hash(vec2(mGrid.x, 3.14)) * 3.0 + 1.5;
+    float drop = fract(camUv.y * 1.8 - u_time * speed * 0.15 + hash(vec2(mGrid.x, 7.89)));
+    float head = smoothstep(0.88, 1.0, drop);
+    float body = pow(drop, 3.5);
+    vec3 greenPhosphor = mix(vec3(0.0, 1.0, 0.3), vec3(0.8, 1.0, 0.9), head);
+    matrixColor = (greenPhosphor * head * 2.2 + vec3(0.0, 0.8, 0.2) * body) * maskVal;
+    matrixColor *= (0.8 + 0.2 * sin(camUv.y * 380.0));
+  }
+
+  // 8. Plasma Forcefield
+  vec3 forcefieldColor = vec3(0.0);
+  if (maskVal > 0.15) {
+    float wave = sin(length(camUv - 0.5) * 22.0 - u_time * 6.0);
+    float hexGrid = sin(camUv.x * 50.0) * sin(camUv.y * 50.0 + camUv.x * 25.0);
+    float fieldMesh = smoothstep(0.4, 0.9, hexGrid);
+    vec3 shield = mix(baseColor, vec3(0.1, 0.9, 1.0), wave * 0.5 + 0.5);
+    forcefieldColor = (shield * fieldMesh * 0.8 + baseColor * edge * 2.2) * maskVal;
+  }
+
+  // 9. Spectral X-Ray & Ghost
+  vec3 xrayColor = vec3(0.0);
+  if (maskVal > 0.15) {
+    float innerGlow = pow(1.0 - edge, 3.5) * maskVal;
+    vec3 rimGlow = mix(vec3(0.1, 0.8, 1.0), vec3(0.9, 0.2, 1.0), edge);
+    xrayColor = (vec3(0.02, 0.08, 0.25) * innerGlow + rimGlow * pow(edge, 0.6) * 2.5);
+  }
+
+  // 10. Stained Glass Voronoi
+  vec3 stainedGlassColor = vec3(0.0);
+  if (maskVal > 0.2) {
+    vec2 vData = voronoi(camUv * 16.0);
+    float cellBorder = smoothstep(0.08, 0.14, vData.x);
+    vec3 cellHue = hsv2rgb(vec3(fract(vData.y + u_time * 0.03), 0.85, 0.95));
+    stainedGlassColor = (cellHue * cellBorder + vec3(0.05, 0.05, 0.08) * (1.0 - cellBorder)) * maskVal + baseColor * edge * 1.5;
+  }
+
+  // 11. Prismatic RGB Chrono Dispersion Trails
+  vec3 prismaticTrail = vec3(0.0);
+  if (trailVal > 0.03) {
+    float split = 0.012;
+    float rT = texture2D(u_trail, camUv + vec2(split, 0.0)).r;
+    float gT = texture2D(u_trail, camUv).r;
+    float bT = texture2D(u_trail, camUv - vec2(split, 0.0)).r;
+    prismaticTrail = vec3(rT * 1.2, gT * 1.0, bT * 1.4) * 0.9;
+  }
+
+  // 12. Thermal Flame & Billowing Smoke
+  vec3 flameTrail = vec3(0.0);
+  if (trailVal > 0.03) {
+    float heat = clamp(trailVal * 1.4, 0.0, 1.0);
+    vec3 fire = mix(vec3(0.1, 0.0, 0.05), vec3(1.0, 0.2, 0.0), smoothstep(0.05, 0.45, heat));
+    fire = mix(fire, vec3(1.0, 0.95, 0.3), smoothstep(0.45, 0.85, heat));
+    flameTrail = fire * (0.8 + 0.2 * noise(camUv * 15.0 + vec2(0.0, -u_time * 3.0)));
+  }
+
+  // 13. Cyber Glitch & Hologram Scanline Trails
+  vec3 glitchTrail = vec3(0.0);
+  if (trailVal > 0.03) {
+    float slice = floor(camUv.y * 40.0);
+    float j = (hash(vec2(slice, floor(u_time * 16.0))) - 0.5) * 0.035;
+    float gVal = texture2D(u_trail, camUv + vec2(j, 0.0)).r;
+    vec3 gTint = mix(vec3(0.0, 1.0, 0.8), vec3(1.0, 0.0, 0.5), fract(slice * 0.1));
+    glitchTrail = gTint * gVal * (0.6 + 0.4 * sin(camUv.y * 280.0));
+  }
+
+  // 14. Luminous Light Ribbons
+  vec3 ribbonTrail = vec3(0.0);
+  if (trailVal > 0.02) {
+    float rib = pow(trailVal, 0.7);
+    vec3 ribColor = hsv2rgb(vec3(fract(camUv.x * 0.5 + camUv.y * 0.5 + u_time * 0.1), 0.8, 1.0));
+    ribbonTrail = ribColor * rib * 1.2;
+  }
+
+  // Combine active visual effects according to preset
   vec3 finalColor = vec3(0.0);
 
   if (u_effect == 0) { // Neon Aura
@@ -116,7 +225,27 @@ void main() {
     finalColor = echoColor + (auraColor * 0.7);
   } else if (u_effect == 3) { // Edge Sparks
     finalColor = auraColor * 1.5 + (baseColor * edge);
-  } else { // Combined
+  } else if (u_effect == 4) { // Combined
+    finalColor = auraColor + cosmicColor + echoColor;
+  } else if (u_effect == 5) { // Liquid Chrome
+    finalColor = chromeColor + auraColor * 0.8;
+  } else if (u_effect == 6) { // Digital Matrix Rain
+    finalColor = matrixColor + auraColor * 0.7;
+  } else if (u_effect == 7) { // Plasma Forcefield
+    finalColor = forcefieldColor;
+  } else if (u_effect == 8) { // Spectral X-Ray
+    finalColor = xrayColor;
+  } else if (u_effect == 9) { // Stained Glass Mosaic
+    finalColor = stainedGlassColor;
+  } else if (u_effect == 10) { // Prismatic RGB Dispersion Trails
+    finalColor = prismaticTrail + auraColor * 0.7;
+  } else if (u_effect == 11) { // Thermal Flame & Smoke Trails
+    finalColor = flameTrail + auraColor * 0.5;
+  } else if (u_effect == 12) { // Cyber Glitch Scanline Trails
+    finalColor = glitchTrail + auraColor * 0.6;
+  } else if (u_effect == 13) { // Luminous Light Ribbons
+    finalColor = ribbonTrail + auraColor * 0.6;
+  } else {
     finalColor = auraColor + cosmicColor + echoColor;
   }
 
@@ -198,7 +327,7 @@ export function SilhouetteFX() {
     u_time: { value: 0 },
     u_effect: { value: 4 }, // 4: combined
     u_rainbow: { value: false }
-  }), [maskTexture, trailTexture])
+  }), [maskTexture, trailTexture, silhouetteColor])
 
   // Update Homography projection coefficients
   useFrame((state, delta) => {
@@ -213,7 +342,16 @@ export function SilhouetteFX() {
       cosmic: 1,
       echo: 2,
       sparks: 3,
-      combined: 4
+      combined: 4,
+      chrome: 5,
+      matrix: 6,
+      forcefield: 7,
+      xray: 8,
+      stainedglass: 9,
+      prismatic: 10,
+      flame: 11,
+      glitch: 12,
+      ribbon: 13
     }
     materialRef.current.uniforms.u_effect.value = effectMap[silhouetteEffect] ?? 4
 

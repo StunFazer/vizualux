@@ -23,7 +23,23 @@ export interface Point2D {
 export type TrackingMode = 'pose' | 'motion'
 export type SilhouetteEngine = 'human' | 'object'
 export type SilhouetteResolution = 'performance' | 'hd'
-export type SilhouetteEffect = 'aura' | 'cosmic' | 'echo' | 'sparks' | 'combined'
+export type SilhouetteEffect = 
+  | 'aura' 
+  | 'cosmic' 
+  | 'echo' 
+  | 'sparks' 
+  | 'combined'
+  | 'chrome'
+  | 'matrix'
+  | 'forcefield'
+  | 'xray'
+  | 'stainedglass'
+  | 'prismatic'
+  | 'flame'
+  | 'glitch'
+  | 'ribbon'
+
+export type ParticleTrailStyle = 'rainbow' | 'fireflies' | 'plasma' | 'embers' | 'aurora'
 
 interface TrackerThresholds {
   detection: number
@@ -98,6 +114,8 @@ interface AppState {
   setSilhouetteRainbow: (val: boolean) => void
   silhouetteTrailDecay: number
   setSilhouetteTrailDecay: (val: number) => void
+  particleTrailStyle: ParticleTrailStyle
+  setParticleTrailStyle: (style: ParticleTrailStyle) => void
 }
 
 const defaultCorners: Point2D[] = [
@@ -287,6 +305,8 @@ export const useStore = create<AppState>((set) => ({
   setSilhouetteRainbow: (val) => set({ silhouetteRainbow: val }),
   silhouetteTrailDecay: 0.94,
   setSilhouetteTrailDecay: (val) => set({ silhouetteTrailDecay: val }),
+  particleTrailStyle: 'rainbow',
+  setParticleTrailStyle: (style) => set({ particleTrailStyle: style }),
 }))
 
 const bc = new BroadcastChannel('app-sync')
@@ -324,7 +344,8 @@ useStore.subscribe((state) => {
       silhouetteEffect: state.silhouetteEffect,
       silhouetteColor: state.silhouetteColor,
       silhouetteRainbow: state.silhouetteRainbow,
-      silhouetteTrailDecay: state.silhouetteTrailDecay
+      silhouetteTrailDecay: state.silhouetteTrailDecay,
+      particleTrailStyle: state.particleTrailStyle
     }
     bc.postMessage({ type: 'SYNC_STATE', state: syncableState })
   }

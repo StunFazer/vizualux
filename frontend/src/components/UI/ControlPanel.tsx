@@ -35,7 +35,8 @@ export function ControlPanel() {
     silhouetteEffect, setSilhouetteEffect,
     silhouetteColor, setSilhouetteColor,
     silhouetteRainbow, setSilhouetteRainbow,
-    silhouetteTrailDecay, setSilhouetteTrailDecay
+    silhouetteTrailDecay, setSilhouetteTrailDecay,
+    particleTrailStyle, setParticleTrailStyle
   } = useStore()
 
   const updateThreshold = (key: 'detection' | 'presence' | 'tracking', value: number) => {
@@ -377,16 +378,18 @@ export function ControlPanel() {
             </div>
           </div>
 
-          {/* Visual Effect Mode */}
+          {/* Masking Effects */}
           <div>
-            <div style={labelStyle}><span>Visual Preset</span></div>
+            <div style={labelStyle}><span>🎭 Masking Effects</span></div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
               {[
                 { id: 'aura', label: 'Neon Aura' },
-                { id: 'cosmic', label: 'Cosmic Fill' },
-                { id: 'echo', label: 'Motion Echo' },
-                { id: 'sparks', label: 'Edge Sparks' },
-                { id: 'combined', label: 'Combined' },
+                { id: 'cosmic', label: 'Cosmic Galaxy' },
+                { id: 'chrome', label: 'Liquid Chrome' },
+                { id: 'matrix', label: 'Matrix Rain' },
+                { id: 'forcefield', label: 'Forcefield' },
+                { id: 'xray', label: 'Spectral X-Ray' },
+                { id: 'stainedglass', label: 'Stained Glass' },
               ].map((fx) => (
                 <button
                   key={fx.id}
@@ -395,7 +398,40 @@ export function ControlPanel() {
                     padding: '6px 4px',
                     fontSize: '0.7rem',
                     backgroundColor: silhouetteEffect === fx.id ? '#8b5cf6' : 'rgba(255,255,255,0.1)',
-                    border: 'none',
+                    border: silhouetteEffect === fx.id ? '1px solid #c4b5fd' : 'none',
+                    borderRadius: '4px',
+                    color: 'white',
+                    cursor: 'pointer',
+                    textAlign: 'center'
+                  }}
+                >
+                  {fx.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Trailing Effects */}
+          <div>
+            <div style={labelStyle}><span>✨ Trailing Effects</span></div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
+              {[
+                { id: 'echo', label: 'Motion Echo' },
+                { id: 'prismatic', label: 'RGB Chrono' },
+                { id: 'flame', label: 'Flame Smoke' },
+                { id: 'glitch', label: 'Cyber Glitch' },
+                { id: 'ribbon', label: 'Light Ribbons' },
+                { id: 'sparks', label: 'Edge Sparks' },
+                { id: 'combined', label: 'Ultra Combined' },
+              ].map((fx) => (
+                <button
+                  key={fx.id}
+                  onClick={() => setSilhouetteEffect(fx.id as any)}
+                  style={{
+                    padding: '6px 4px',
+                    fontSize: '0.7rem',
+                    backgroundColor: silhouetteEffect === fx.id ? '#06b6d4' : 'rgba(255,255,255,0.1)',
+                    border: silhouetteEffect === fx.id ? '1px solid #67e8f9' : 'none',
                     borderRadius: '4px',
                     color: 'white',
                     cursor: 'pointer',
@@ -482,6 +518,50 @@ export function ControlPanel() {
               onChange={(e) => setSilhouetteTrailDecay(parseFloat(e.target.value))}
               style={sliderStyle}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Particle Trail Contextual Controls */}
+      {currentMode === 'ParticleTrail' && (
+        <div style={{
+          marginTop: '15px',
+          padding: '12px',
+          background: 'rgba(59, 130, 246, 0.12)',
+          border: '1px solid rgba(59, 130, 246, 0.35)',
+          borderRadius: '8px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '10px'
+        }}>
+          <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Particle Trail Style
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
+            {[
+              { id: 'rainbow', label: 'Rainbow Stars' },
+              { id: 'fireflies', label: 'Golden Fireflies' },
+              { id: 'plasma', label: 'Electric Plasma' },
+              { id: 'embers', label: 'Volcanic Embers' },
+              { id: 'aurora', label: 'Aurora Borealis' },
+            ].map((st) => (
+              <button
+                key={st.id}
+                onClick={() => setParticleTrailStyle(st.id as any)}
+                style={{
+                  padding: '6px 4px',
+                  fontSize: '0.7rem',
+                  backgroundColor: particleTrailStyle === st.id ? '#3b82f6' : 'rgba(255,255,255,0.1)',
+                  border: particleTrailStyle === st.id ? '1px solid #93c5fd' : 'none',
+                  borderRadius: '4px',
+                  color: 'white',
+                  cursor: 'pointer',
+                  textAlign: 'center'
+                }}
+              >
+                {st.label}
+              </button>
+            ))}
           </div>
         </div>
       )}
