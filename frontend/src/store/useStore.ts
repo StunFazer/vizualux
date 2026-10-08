@@ -1,6 +1,19 @@
 import { create } from 'zustand'
 
-export type AppMode = 'Asteroids' | 'FluidSimulation' | 'KoiPond' | 'MotionReveal' | 'ScatterLeaves' | 'Sparkles' | 'ParticleTrail' | 'SandyShore' | 'SilhouetteFX'
+export type AppMode = 
+  | 'Asteroids' 
+  | 'FluidSimulation' 
+  | 'KoiPond' 
+  | 'MotionReveal' 
+  | 'ScatterLeaves' 
+  | 'Sparkles' 
+  | 'ParticleTrail' 
+  | 'SandyShore' 
+  | 'SilhouetteFX'
+  | 'CosmicNebula'
+  | 'NeonGrid'
+  | 'ElectricPlasma'
+  | 'LavaEmbers'
 
 export interface Point2D {
   x: number

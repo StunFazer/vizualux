@@ -11,6 +11,10 @@ import { Sparkles } from './modes/Sparkles'
 import { ParticleTrail } from './modes/ParticleTrail'
 import { SandyShore } from './modes/SandyShore'
 import { SilhouetteFX } from './modes/SilhouetteFX'
+import { CosmicNebula } from './modes/CosmicNebula'
+import { NeonGrid } from './modes/NeonGrid'
+import { ElectricPlasma } from './modes/ElectricPlasma'
+import { LavaEmbers } from './modes/LavaEmbers'
 import { KinematicColliders } from './KinematicColliders'
 import { Environment } from '@react-three/drei'
 
@@ -68,6 +72,22 @@ export function Scene() {
 
           {currentMode === 'SilhouetteFX' && (
             <SilhouetteFX />
+          )}
+
+          {currentMode === 'CosmicNebula' && (
+            <CosmicNebula />
+          )}
+
+          {currentMode === 'NeonGrid' && (
+            <NeonGrid />
+          )}
+
+          {currentMode === 'ElectricPlasma' && (
+            <ElectricPlasma />
+          )}
+
+          {currentMode === 'LavaEmbers' && (
+            <LavaEmbers />
           )}
         </Suspense>
       </Canvas>
