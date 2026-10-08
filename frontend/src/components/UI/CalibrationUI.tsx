@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useStore, type Point2D } from '../../store/useStore'
 import { useTracker } from '../../hooks/useTracker'
 import { Homography } from '../../utils/homography'
+import { CameraSelector } from './CameraSelector'
 
 const HANDLE_SIZE = 24
 
@@ -58,8 +59,9 @@ export function CalibrationUI() {
     setCalibrationStep,
     emitMessage,
     activeCamera,
-    setActiveCamera,
-    cameras
+    activeCameraId,
+    deviceCameras,
+    hostCameras
   } = useStore()
 
   const [draggingIdx, setDraggingIdx] = useState<number | null>(null)
@@ -337,28 +339,7 @@ export function CalibrationUI() {
             background: 'rgba(255,255,255,0.06)', padding: '6px 12px', 
             borderRadius: '8px', border: '1px solid rgba(255,255,255,0.12)' 
           }}>
-            <label style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 600 }}>Camera:</label>
-            <select
-              value={activeCamera}
-              onChange={(e) => setActiveCamera(Number(e.target.value))}
-              style={{
-                backgroundColor: '#1e293b',
-                color: '#e2e8f0',
-                border: '1px solid #334155',
-                borderRadius: '6px',
-                padding: '6px 10px',
-                fontSize: '0.85rem',
-                cursor: 'pointer',
-                outline: 'none',
-                maxWidth: '220px'
-              }}
-            >
-              {cameras.map((cam) => (
-                <option key={cam.index} value={cam.index} style={{ background: '#0f172a', color: 'white' }}>
-                  {cam.name}
-                </option>
-              ))}
-            </select>
+            <CameraSelector compact={true} />
           </div>
 
           {!isAutoCalibrating ? (
@@ -421,7 +402,7 @@ export function CalibrationUI() {
         }}>
           <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <span style={{ color: '#e2e8f0', fontWeight: 600, fontSize: '0.95rem' }}>
-              Camera Tracking View <span style={{ color: '#64748b', fontSize: '0.85rem', fontWeight: 400 }}>({cameras.find(c => c.index === activeCamera)?.name || `Camera ${activeCamera}`})</span>
+              Camera Tracking View <span style={{ color: '#64748b', fontSize: '0.85rem', fontWeight: 400 }}>({[...deviceCameras, ...hostCameras].find(c => c.id === activeCameraId)?.name || (activeCamera === -1 ? '📱 Phone / Device Camera' : `Camera ${activeCamera}`)})</span>
             </span>
             <span style={{ color: hasStream ? '#10b981' : '#f43f5e', fontSize: '0.85rem', fontWeight: 500 }}>
               {hasStream ? 'Stream Active (640x360)' : 'Waiting for camera feed...'}
@@ -546,7 +527,7 @@ export function CalibrationUI() {
                 border: '1px solid #10b981', borderRadius: '6px', 
                 color: '#34d399', fontSize: '0.85rem', fontWeight: 500, marginBottom: '8px'
               }}>
-                Auto-calibration successful! Perspective homography matrix locked to floor surface.
+                Auto-calibration successful!
               </div>
             )}
 

@@ -5,6 +5,7 @@ import './index.css'
 
 import { useStore } from './store/useStore'
 import { CalibrationUI } from './components/UI/CalibrationUI'
+import { DeviceCameraStreamer } from './components/DeviceCameraStreamer'
 
 import { useTracker } from './hooks/useTracker'
 
@@ -54,6 +55,7 @@ function App() {
 
     return (
       <>
+        <DeviceCameraStreamer />
         {isCalibrating && (
           <div style={{ position: 'fixed', inset: 0, zIndex: 9999, backgroundColor: '#000000', overflow: 'hidden' }}>
             {/* Step 0: Ambient darkness capture */}
@@ -106,6 +108,7 @@ function App() {
   // Control Panel View
   return (
     <>
+      <DeviceCameraStreamer />
       {isCalibrating ? <CalibrationUI /> : (uiVisible && <ControlPanel />)}
       <div style={{ position: 'fixed', inset: 0, zIndex: -1, background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#444' }}>
         <h1 style={{ fontFamily: 'sans-serif' }}>Control Panel Active</h1>

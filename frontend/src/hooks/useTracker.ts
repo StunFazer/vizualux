@@ -133,6 +133,15 @@ export function useTracker() {
           const rawData = JSON.parse(event.data)
           if (rawData.type === 'camera_list') {
             useStore.getState().setCameras(rawData.cameras)
+            const hostItems = (rawData.cameras || [])
+              .filter((c: any) => c.index !== -1)
+              .map((c: any) => ({
+                id: `host:${c.index}`,
+                name: `🖥️ ${c.name}`,
+                type: 'host' as const,
+                index: c.index
+              }))
+            useStore.getState().setHostCameras(hostItems)
             const savedCam = localStorage.getItem('activeCamera')
             if (savedCam === null && rawData.current_camera !== undefined) {
               useStore.getState().setActiveCamera(rawData.current_camera)

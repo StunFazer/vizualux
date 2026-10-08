@@ -18,19 +18,43 @@ interface TrackerThresholds {
   tracking: number
 }
 
+export interface CameraItem {
+  id: string
+  name: string
+  type: 'device' | 'host'
+  deviceId?: string
+  index?: number
+}
+
 interface AppState {
   currentMode: AppMode
   setMode: (mode: AppMode) => void
   trackingStatus: boolean
   setTrackingStatus: (status: boolean) => void
   activeCamera: number
+  activeCameraId: string
   setActiveCamera: (index: number) => void
+  setActiveCameraId: (id: string) => void
+  hostCameras: CameraItem[]
+  setHostCameras: (cams: CameraItem[]) => void
+  deviceCameras: CameraItem[]
+  setDeviceCameras: (cams: CameraItem[]) => void
   emitMessage: ((msg: any) => void) | null
   setEmitMessage: (fn: (msg: any) => void) => void
   emitBinary: ((data: ArrayBuffer | Blob) => void) | null
   setEmitBinary: (fn: (data: ArrayBuffer | Blob) => void) => void
   isPhoneStreaming: boolean
   setIsPhoneStreaming: (val: boolean) => void
+  streamResolution: { width: number; height: number }
+  setStreamResolution: (res: { width: number; height: number }) => void
+  streamFps: number
+  setStreamFps: (fps: number) => void
+  streamMirror: boolean
+  setStreamMirror: (val: boolean) => void
+  streamFpsDisplay: number
+  setStreamFpsDisplay: (val: number) => void
+  streamError: string | null
+  setStreamError: (err: string | null) => void
   isCalibrating: boolean
   setIsCalibrating: (val: boolean) => void
   calibrationStep: number // -1 = manual/inactive, 0 = ambient baseline, 1 = TL, 2 = TR, 3 = BR, 4 = BL, 5 = solving
@@ -78,13 +102,35 @@ const loadCorners = (): Point2D[] => {
   return defaultCorners
 }
 
+const loadActiveCameraId = (): string => {
+  const saved = localStorage.getItem('activeCameraId')
+  if (saved) return saved
+  const savedIndex = localStorage.getItem('activeCamera')
+  if (savedIndex !== null) {
+    const idx = parseInt(savedIndex, 10)
+    if (!isNaN(idx)) {
+      return idx === -1 ? 'device:environment' : `host:${idx}`
+    }
+  }
+  if (typeof window !== 'undefined' && (/android|iphone|ipad|ipod/i.test(navigator.userAgent) || window.innerWidth < 768)) {
+    return 'device:environment'
+  }
+  return 'host:0'
+}
+
 const loadActiveCamera = (): number => {
+  const savedId = localStorage.getItem('activeCameraId')
+  if (savedId) {
+    if (savedId.startsWith('device:')) return -1
+    if (savedId.startsWith('host:')) {
+      const idx = parseInt(savedId.replace('host:', ''), 10)
+      if (!isNaN(idx)) return idx
+    }
+  }
   const saved = localStorage.getItem('activeCamera')
   if (saved !== null) {
     const parsed = parseInt(saved, 10)
-    if (!isNaN(parsed) && parsed >= 0) {
-      return parsed
-    }
+    if (!isNaN(parsed)) return parsed
   }
   return 0
 }
@@ -104,14 +150,51 @@ export const useStore = create<AppState>((set) => ({
   }),
   trackingStatus: false,
   setTrackingStatus: (status) => set({ trackingStatus: status }),
+  activeCameraId: loadActiveCameraId(),
   activeCamera: loadActiveCamera(),
-  setActiveCamera: (index) => {
+  hostCameras: [],
+  deviceCameras: [
+    {
+      id: 'device:environment',
+      name: '📷 Rear Camera (Environment)',
+      type: 'device',
+      deviceId: ''
+    },
+    {
+      id: 'device:user',
+      name: '📷 Front Camera (User)',
+      type: 'device',
+      deviceId: ''
+    }
+  ],
+  setHostCameras: (cams) => set({ hostCameras: cams }),
+  setDeviceCameras: (cams) => set({ deviceCameras: cams }),
+  setActiveCameraId: (id) => {
+    localStorage.setItem('activeCameraId', id)
+    let index = 0
+    if (id.startsWith('device:')) {
+      index = -1
+    } else if (id.startsWith('host:')) {
+      index = parseInt(id.replace('host:', ''), 10)
+      if (isNaN(index)) index = 0
+    }
     localStorage.setItem('activeCamera', String(index))
     set((state) => {
       if (state.emitMessage) {
         state.emitMessage({ type: 'set_camera', index })
       }
-      return { activeCamera: index }
+      return { activeCameraId: id, activeCamera: index }
+    })
+  },
+  setActiveCamera: (index) => {
+    const id = index === -1 ? (localStorage.getItem('activeCameraId')?.startsWith('device:') ? localStorage.getItem('activeCameraId')! : 'device:environment') : `host:${index}`
+    localStorage.setItem('activeCamera', String(index))
+    localStorage.setItem('activeCameraId', id)
+    set((state) => {
+      if (state.emitMessage) {
+        state.emitMessage({ type: 'set_camera', index })
+      }
+      return { activeCamera: index, activeCameraId: id }
     })
   },
   emitMessage: null,
@@ -120,6 +203,16 @@ export const useStore = create<AppState>((set) => ({
   setEmitBinary: (fn) => set({ emitBinary: fn }),
   isPhoneStreaming: false,
   setIsPhoneStreaming: (val) => set({ isPhoneStreaming: val }),
+  streamResolution: { width: 1280, height: 720 },
+  setStreamResolution: (res) => set({ streamResolution: res }),
+  streamFps: 30,
+  setStreamFps: (fps) => set({ streamFps: fps }),
+  streamMirror: false,
+  setStreamMirror: (val) => set({ streamMirror: val }),
+  streamFpsDisplay: 0,
+  setStreamFpsDisplay: (val) => set({ streamFpsDisplay: val }),
+  streamError: null,
+  setStreamError: (err) => set({ streamError: err }),
   isCalibrating: false,
   setIsCalibrating: (val) => set((state) => {
     if (state.emitMessage) {
@@ -189,8 +282,13 @@ let isReceiving = false
 bc.onmessage = (e) => {
   if (e.data.type === 'SYNC_STATE') {
     isReceiving = true
-    if (e.data.state && e.data.state.activeCamera !== undefined) {
-      localStorage.setItem('activeCamera', String(e.data.state.activeCamera))
+    if (e.data.state) {
+      if (e.data.state.activeCamera !== undefined) {
+        localStorage.setItem('activeCamera', String(e.data.state.activeCamera))
+      }
+      if (e.data.state.activeCameraId !== undefined) {
+        localStorage.setItem('activeCameraId', String(e.data.state.activeCameraId))
+      }
     }
     useStore.setState(e.data.state)
     isReceiving = false
@@ -205,6 +303,7 @@ useStore.subscribe((state) => {
       calibrationStep: state.calibrationStep,
       calibrationCorners: state.calibrationCorners,
       activeCamera: state.activeCamera,
+      activeCameraId: state.activeCameraId,
       uiVisible: state.uiVisible,
       trackingMode: state.trackingMode,
       silhouetteEngine: state.silhouetteEngine,

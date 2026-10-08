@@ -1,5 +1,6 @@
 import { useStore } from '../../store/useStore'
 import { PhoneCameraStreamer } from './PhoneCameraStreamer'
+import { CameraSelector } from './CameraSelector'
 
 const sliderStyle = {
   width: '100%',
@@ -26,9 +27,9 @@ const COLOR_SWATCHES = [
 
 export function ControlPanel() {
   const { 
-    currentMode, setMode, trackingStatus, activeCamera, setActiveCamera,
+    currentMode, setMode, trackingStatus,
     trackingMode, setTrackingMode, trackerThresholds, setTrackerThresholds,
-    advancedOpen, toggleAdvanced, cameras,
+    advancedOpen, toggleAdvanced,
     silhouetteEngine, setSilhouetteEngine,
     silhouetteResolution, setSilhouetteResolution,
     silhouetteEffect, setSilhouetteEffect,
@@ -419,27 +420,9 @@ export function ControlPanel() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '20px' }}>
         <h3 style={{ margin: '0', fontSize: '0.9rem', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '1px' }}>Camera Source</h3>
-        <select 
-          value={activeCamera}
-          onChange={(e) => setActiveCamera(Number(e.target.value))}
-          style={{
-            padding: '10px',
-            backgroundColor: 'rgba(255,255,255,0.1)',
-            color: 'white',
-            border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: '6px',
-            outline: 'none',
-            cursor: 'pointer'
-          }}
-        >
-          {cameras.map((cam) => (
-            <option key={cam.index} value={cam.index} style={{ color: 'black' }}>
-              {cam.name}
-            </option>
-          ))}
-        </select>
+        <CameraSelector />
 
-        {/* Dedicated Phone / Device Camera Streamer */}
+        {/* Dedicated Phone / Device Camera Settings */}
         <PhoneCameraStreamer />
       </div>
 

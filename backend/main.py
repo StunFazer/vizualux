@@ -288,14 +288,15 @@ async def websocket_receive(websocket):
                         try:
                             new_index = int(new_index)
                             save_camera(new_index)
-                            if new_index != current_camera_index:
-                                print(f"Received request to change camera to {new_index}")
-                                current_camera_index = new_index
-                                if new_index == -1:
-                                    use_client_stream = True
-                                else:
-                                    use_client_stream = False
+                            print(f"Received request to change camera to {new_index}")
+                            if new_index == -1:
+                                use_client_stream = True
+                                current_camera_index = -1
+                            else:
+                                use_client_stream = False
+                                if new_index != current_camera_index:
                                     camera_changed = True
+                                current_camera_index = new_index
                         except (ValueError, TypeError) as e:
                             print(f"Invalid camera index received: {e}")
                 elif data.get("type") == "set_calibrating":
