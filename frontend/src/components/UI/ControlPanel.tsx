@@ -156,22 +156,6 @@ export function ControlPanel() {
           Motion Reveal (Gallery & Custom)
         </button>
 
-        <button 
-          onClick={() => setMode('FluidSimulation')}
-          style={{
-            padding: '10px 15px',
-            backgroundColor: currentMode === 'FluidSimulation' ? '#3b82f6' : 'rgba(255,255,255,0.1)',
-            border: currentMode === 'FluidSimulation' ? '1px solid #60a5fa' : 'none',
-            borderRadius: '6px',
-            color: 'white',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            textAlign: 'left',
-            fontWeight: currentMode === 'FluidSimulation' ? 'bold' : 'normal'
-          }}
-        >
-          Fluid Dynamics
-        </button>
 
         <button 
           onClick={() => setMode('SilhouetteFX')}

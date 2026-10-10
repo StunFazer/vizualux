@@ -20,103 +20,21 @@ interface ScatterItem {
 
 const randomRange = (min: number, max: number) => Math.random() * (max - min) + min
 
-// Generate procedural textures for presets
-function createProceduralTexture(type: 'snowflakes' | 'petals' | 'coins'): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas')
-  canvas.width = 128
-  canvas.height = 128
-  const ctx = canvas.getContext('2d')!
-  ctx.clearRect(0, 0, 128, 128)
 
-  if (type === 'snowflakes') {
-    // 6-pointed detailed snowflake
-    ctx.strokeStyle = '#ffffff'
-    ctx.lineWidth = 4
-    ctx.lineCap = 'round'
-    ctx.shadowColor = '#80d8ff'
-    ctx.shadowBlur = 10
-
-    ctx.save()
-    ctx.translate(64, 64)
-    for (let arm = 0; arm < 6; arm++) {
-      ctx.beginPath()
-      ctx.moveTo(0, 0)
-      ctx.lineTo(0, -48)
-      // branches
-      ctx.moveTo(0, -20)
-      ctx.lineTo(-14, -30)
-      ctx.moveTo(0, -20)
-      ctx.lineTo(14, -30)
-      ctx.moveTo(0, -35)
-      ctx.lineTo(-10, -42)
-      ctx.moveTo(0, -35)
-      ctx.lineTo(10, -42)
-      ctx.stroke()
-      ctx.rotate(Math.PI / 3)
-    }
-    ctx.restore()
-  } else if (type === 'petals') {
-    // Sakura cherry blossom petal
-    ctx.fillStyle = '#ffb7c5'
-    ctx.shadowColor = '#ff69b4'
-    ctx.shadowBlur = 8
-
-    ctx.beginPath()
-    ctx.moveTo(64, 20)
-    ctx.bezierCurveTo(90, 20, 105, 55, 95, 85)
-    ctx.bezierCurveTo(85, 110, 64, 115, 64, 115)
-    ctx.bezierCurveTo(64, 115, 43, 110, 33, 85)
-    ctx.bezierCurveTo(23, 55, 38, 20, 64, 20)
-    ctx.fill()
-
-    // Petal notch
-    ctx.fillStyle = '#ff8da1'
-    ctx.beginPath()
-    ctx.arc(64, 30, 8, 0, Math.PI * 2)
-    ctx.fill()
-  } else if (type === 'coins') {
-    // Gold arcade coin
-    ctx.fillStyle = '#f59e0b'
-    ctx.beginPath()
-    ctx.arc(64, 64, 52, 0, Math.PI * 2)
-    ctx.fill()
-
-    ctx.strokeStyle = '#fbbf24'
-    ctx.lineWidth = 6
-    ctx.stroke()
-
-    ctx.fillStyle = '#ffd700'
-    ctx.beginPath()
-    ctx.arc(64, 64, 40, 0, Math.PI * 2)
-    ctx.fill()
-
-    // Inner embossed star
-    ctx.fillStyle = '#d97706'
-    ctx.font = 'bold 38px sans-serif'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText('★', 64, 66)
-  }
-
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.colorSpace = THREE.SRGBColorSpace
-  return texture
-}
 
 export function Scatter() {
   const trackingDataRef = useTracker()
-  const leafTexture = useTexture('/textures/maple_leaf.png')
-
   const preset = useStore((s) => s.scatterPreset)
   const customImgUrl = useStore((s) => s.scatterCustomImage)
 
   const instancedMeshRef = useRef<THREE.InstancedMesh>(null)
   const dummy = useMemo(() => new THREE.Object3D(), [])
 
-  // Procedural preset textures
-  const snowflakeTexture = useMemo(() => createProceduralTexture('snowflakes'), [])
-  const petalTexture = useMemo(() => createProceduralTexture('petals'), [])
-  const coinTexture = useMemo(() => createProceduralTexture('coins'), [])
+  // Pre-load transparent PNG textures for presets
+  const leafTexture = useTexture('/textures/maple_leaf.png')
+  const snowflakeTexture = useTexture('/textures/snowflake.png')
+  const petalTexture = useTexture('/textures/sakura_petal.png')
+  const coinTexture = useTexture('/textures/gold_coin.png')
 
   // Custom texture loader if uploaded
   const customTextureRef = useRef<THREE.Texture | null>(null)
@@ -194,9 +112,9 @@ export function Scatter() {
     }
 
     // Tuning parameters per preset
-    const repulsionRadius = preset === 'snowflakes' ? 2.0 : preset === 'coins' ? 1.4 : 1.8
-    const baseKick = preset === 'coins' ? 10 : preset === 'snowflakes' ? 5 : 8
-    const drag = preset === 'coins' ? 0.90 : preset === 'snowflakes' ? 0.96 : 0.93
+    const repulsionRadius = preset === 'snowflakes' ? 2.4 : preset === 'petals' ? 2.2 : preset === 'coins' ? 1.6 : 2.0
+    const baseKick = preset === 'coins' ? 12 : preset === 'snowflakes' ? 8 : preset === 'petals' ? 9 : 10
+    const drag = preset === 'coins' ? 0.90 : preset === 'snowflakes' ? 0.96 : 0.94
     const gravityY = preset === 'snowflakes' ? -0.35 : preset === 'petals' ? -0.18 : 0.0
 
     const mesh = instancedMeshRef.current
@@ -214,22 +132,23 @@ export function Scatter() {
         item.vel.x += Math.cos(now * 1.2 + i * 2) * 0.25 * dt
       }
 
-      // Interaction from tracked limbs: velocity-dependent kick + soft static parting
+      // Fluid interaction from tracked limbs: proximity-based repulsion, speed boost, and swirl
       activePoints.forEach(({ pt, speed }) => {
         const dist = item.pos.distanceTo(pt)
         if (dist < repulsionRadius && dist > 0.001) {
           const forceDir = item.pos.clone().sub(pt).normalize()
-          const proximity = (1.0 - dist / repulsionRadius)
+          const proximity = Math.pow(1.0 - dist / repulsionRadius, 1.3)
 
-          if (speed > 1.2) {
-            // Intentional kick
-            const kickImpulse = proximity * Math.min(speed * 0.6, 6.0) * baseKick
-            item.vel.addScaledVector(forceDir, kickImpulse * dt)
-            item.rotVel += randomRange(-4, 4) * proximity
-          } else {
-            // Gentle static separation (soft nudge so items don't overlap feet)
-            item.pos.addScaledVector(forceDir, proximity * 0.4 * dt)
-          }
+          // Dynamic impulse: combines proximity push with limb momentum
+          const dynamicForce = (1.8 + Math.min(speed, 5.0) * 1.5) * baseKick
+          item.vel.addScaledVector(forceDir, dynamicForce * proximity * dt)
+
+          // Tangential vortex / swirl for realistic disturbance
+          const tangent = new THREE.Vector3(-forceDir.y, forceDir.x, 0)
+          item.vel.addScaledVector(tangent, Math.sin(i * 1.7) * 2.5 * proximity * dt)
+
+          // Angular spin
+          item.rotVel += (randomRange(-6, 6) + speed * 2.0) * proximity * dt * 10
         }
       })
 

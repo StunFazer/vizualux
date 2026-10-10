@@ -58,9 +58,9 @@ float caustics(vec2 uv, float t) {
 float getWaveDisplacement(vec2 uv) {
   float totalDisp = 0.0;
   
-  // Ambient gentle pool waves
-  float amb = sin(uv.x * 5.0 + u_time * 0.9) * cos(uv.y * 4.0 + u_time * 0.7) * 0.04;
-  amb += sin((uv.x + uv.y) * 8.0 - u_time * 1.2) * 0.02;
+  // Ambient gentle pool waves (smooth, calm undulation)
+  float amb = sin(uv.x * 3.5 + u_time * 0.45) * cos(uv.y * 2.8 + u_time * 0.35) * 0.035;
+  amb += sin((uv.x + uv.y) * 5.0 - u_time * 0.6) * 0.015;
   totalDisp += amb;
 
   // Concentric interactive ripples
@@ -71,22 +71,22 @@ float getWaveDisplacement(vec2 uv) {
     
     if (strength > 0.001) {
       float age = u_time - birth;
-      if (age >= 0.0 && age < 4.0) {
+      if (age >= 0.0 && age < 6.0) {
         // Adjust aspect ratio for circular concentric rings
         vec2 diff = (uv - wave.xy);
         diff.x *= 2.0; // standard 2:1 aspect compensation
         float dist = length(diff);
         
-        float waveSpeed = 1.6;
+        float waveSpeed = 0.55;
         float waveRadius = age * waveSpeed;
         float distFromFront = dist - waveRadius;
         
-        // Ring envelope: sharp front, trailing ripple oscillations
-        float ring = sin(dist * 38.0 - age * 24.0) * exp(-abs(distFromFront) * 9.0);
-        float timeDecay = exp(-age * (1.8 * u_damping));
-        float spatialDecay = exp(-dist * 1.5);
+        // Ring envelope: smooth wave packet with gentle crests and valleys
+        float ring = sin(dist * 18.0 - age * 7.5) * exp(-abs(distFromFront) * 5.5);
+        float timeDecay = exp(-age * (1.1 * u_damping));
+        float spatialDecay = exp(-dist * 1.1);
         
-        totalDisp += ring * strength * timeDecay * spatialDecay * 0.45;
+        totalDisp += ring * strength * timeDecay * spatialDecay * 0.5;
       }
     }
   }
@@ -97,14 +97,14 @@ float getWaveDisplacement(vec2 uv) {
 void main() {
   vec2 uv = vUv;
   
-  // Calculate surface normal via finite difference of displacement
-  float eps = 0.004;
+  // Calculate surface normal via finite difference of displacement with wider sampling baseline
+  float eps = 0.012;
   float hL = getWaveDisplacement(uv - vec2(eps, 0.0));
   float hR = getWaveDisplacement(uv + vec2(eps, 0.0));
   float hD = getWaveDisplacement(uv - vec2(0.0, eps));
   float hU = getWaveDisplacement(uv + vec2(0.0, eps));
   
-  vec3 normal = normalize(vec3((hL - hR), (hD - hU), eps * 2.0));
+  vec3 normal = normalize(vec3((hL - hR), (hD - hU), eps * 2.5));
   
   // Overhead light source
   vec3 lightDir = normalize(vec3(0.3, 0.5, 1.2));

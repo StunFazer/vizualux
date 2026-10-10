@@ -5,7 +5,6 @@ import { ParticleTrail } from './modes/ParticleTrail'
 import { WaterRipples } from './modes/WaterRipples'
 import { Scatter } from './modes/Scatter'
 import { MotionReveal } from './modes/MotionReveal'
-import { FluidSimulation } from './modes/FluidSimulation'
 import { SilhouetteFX } from './modes/SilhouetteFX'
 import { CosmicNebula } from './modes/CosmicNebula'
 import { NeonGrid } from './modes/NeonGrid'
@@ -44,10 +43,6 @@ export function Scene() {
 
           {currentMode === 'MotionReveal' && (
             <MotionReveal />
-          )}
-
-          {currentMode === 'FluidSimulation' && (
-            <FluidSimulation />
           )}
 
           {currentMode === 'SilhouetteFX' && (

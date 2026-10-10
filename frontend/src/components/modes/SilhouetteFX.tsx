@@ -80,15 +80,15 @@ void main() {
   }
   vec2 camUv = vec2(dot(u_coeffsX, vec3(vUv, 1.0)), dot(u_coeffsY, vec3(vUv, 1.0))) / w;
 
-  // Zone clipping & soft vignette margin: fade smoothly to pure black at edges
-  if (camUv.x < 0.0 || camUv.x > 1.0 || camUv.y < 0.0 || camUv.y > 1.0) {
+  // Zone clipping & soft vignette margin: fade smoothly at boundary
+  if (camUv.x < -0.05 || camUv.x > 1.05 || camUv.y < -0.05 || camUv.y > 1.05) {
     gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
     return;
   }
-  float margin = 0.08;
+  float margin = 0.02;
   float edgeX = smoothstep(0.0, margin, camUv.x) * (1.0 - smoothstep(1.0 - margin, 1.0, camUv.x));
   float edgeY = smoothstep(0.0, margin, camUv.y) * (1.0 - smoothstep(1.0 - margin, 1.0, camUv.y));
-  float edgeMask = edgeX * edgeY;
+  float edgeMask = clamp(edgeX * edgeY, 0.0, 1.0);
 
   // 2. Sample current mask and echo trail
   float maskVal = texture2D(u_mask, camUv).r;

@@ -5,7 +5,6 @@ export type AppMode =
   | 'WaterRipples'
   | 'Scatter'
   | 'MotionReveal'
-  | 'FluidSimulation' 
   | 'SilhouetteFX'
   | 'CosmicNebula'
   | 'NeonGrid'
