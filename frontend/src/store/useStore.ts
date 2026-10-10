@@ -1,14 +1,11 @@
 import { create } from 'zustand'
 
 export type AppMode = 
-  | 'Asteroids' 
+  | 'ParticleTrail'
+  | 'WaterRipples'
+  | 'Scatter'
+  | 'MotionReveal'
   | 'FluidSimulation' 
-  | 'KoiPond' 
-  | 'MotionReveal' 
-  | 'ScatterLeaves' 
-  | 'Sparkles' 
-  | 'ParticleTrail' 
-  | 'SandyShore' 
   | 'SilhouetteFX'
   | 'CosmicNebula'
   | 'NeonGrid'
@@ -39,7 +36,9 @@ export type SilhouetteEffect =
   | 'glitch'
   | 'ribbon'
 
-export type ParticleTrailStyle = 'rainbow' | 'fireflies' | 'plasma' | 'embers' | 'aurora'
+export type ParticleTrailStyle = 'rainbow' | 'fireflies' | 'plasma' | 'embers' | 'aurora' | 'stardust'
+export type ScatterPreset = 'leaves' | 'snowflakes' | 'petals' | 'coins' | 'custom'
+export type MotionRevealPreset = 'nebula' | 'garden' | 'lava' | 'custom'
 
 interface TrackerThresholds {
   detection: number
@@ -116,6 +115,32 @@ interface AppState {
   setSilhouetteTrailDecay: (val: number) => void
   particleTrailStyle: ParticleTrailStyle
   setParticleTrailStyle: (style: ParticleTrailStyle) => void
+  particleTrailSize: number
+  setParticleTrailSize: (size: number) => void
+  particleTrailTwinkle: boolean
+  setParticleTrailTwinkle: (twinkle: boolean) => void
+
+  // Scatter State
+  scatterPreset: ScatterPreset
+  setScatterPreset: (preset: ScatterPreset) => void
+  scatterCustomImage: string | null
+  setScatterCustomImage: (img: string | null) => void
+
+  // Motion Reveal State
+  motionRevealPreset: MotionRevealPreset
+  setMotionRevealPreset: (preset: MotionRevealPreset) => void
+  motionRevealCustomImage: string | null
+  setMotionRevealCustomImage: (img: string | null) => void
+  motionRevealBrushRadius: number
+  setMotionRevealBrushRadius: (rad: number) => void
+  motionRevealFadeSpeed: number
+  setMotionRevealFadeSpeed: (speed: number) => void
+
+  // Water Ripples State
+  waterRippleIntensity: number
+  setWaterRippleIntensity: (intensity: number) => void
+  waterRippleDamping: number
+  setWaterRippleDamping: (damping: number) => void
 }
 
 const defaultCorners: Point2D[] = [
@@ -167,7 +192,7 @@ const loadActiveCamera = (): number => {
 }
 
 export const useStore = create<AppState>((set) => ({
-  currentMode: 'Asteroids',
+  currentMode: 'ParticleTrail',
   setMode: (mode) => set((state) => {
     if (state.emitMessage) {
       state.emitMessage({ 
@@ -305,8 +330,36 @@ export const useStore = create<AppState>((set) => ({
   setSilhouetteRainbow: (val) => set({ silhouetteRainbow: val }),
   silhouetteTrailDecay: 0.94,
   setSilhouetteTrailDecay: (val) => set({ silhouetteTrailDecay: val }),
+  
+  // Particle Trail State
   particleTrailStyle: 'rainbow',
   setParticleTrailStyle: (style) => set({ particleTrailStyle: style }),
+  particleTrailSize: 0.5,
+  setParticleTrailSize: (size) => set({ particleTrailSize: size }),
+  particleTrailTwinkle: true,
+  setParticleTrailTwinkle: (twinkle) => set({ particleTrailTwinkle: twinkle }),
+
+  // Scatter State
+  scatterPreset: 'leaves',
+  setScatterPreset: (preset) => set({ scatterPreset: preset }),
+  scatterCustomImage: null,
+  setScatterCustomImage: (img) => set({ scatterCustomImage: img }),
+
+  // Motion Reveal State
+  motionRevealPreset: 'nebula',
+  setMotionRevealPreset: (preset) => set({ motionRevealPreset: preset }),
+  motionRevealCustomImage: null,
+  setMotionRevealCustomImage: (img) => set({ motionRevealCustomImage: img }),
+  motionRevealBrushRadius: 85,
+  setMotionRevealBrushRadius: (rad) => set({ motionRevealBrushRadius: rad }),
+  motionRevealFadeSpeed: 0.35,
+  setMotionRevealFadeSpeed: (speed) => set({ motionRevealFadeSpeed: speed }),
+
+  // Water Ripples State
+  waterRippleIntensity: 1.0,
+  setWaterRippleIntensity: (intensity) => set({ waterRippleIntensity: intensity }),
+  waterRippleDamping: 0.97,
+  setWaterRippleDamping: (damping) => set({ waterRippleDamping: damping }),
 }))
 
 const bc = new BroadcastChannel('app-sync')
@@ -345,7 +398,17 @@ useStore.subscribe((state) => {
       silhouetteColor: state.silhouetteColor,
       silhouetteRainbow: state.silhouetteRainbow,
       silhouetteTrailDecay: state.silhouetteTrailDecay,
-      particleTrailStyle: state.particleTrailStyle
+      particleTrailStyle: state.particleTrailStyle,
+      particleTrailSize: state.particleTrailSize,
+      particleTrailTwinkle: state.particleTrailTwinkle,
+      scatterPreset: state.scatterPreset,
+      scatterCustomImage: state.scatterCustomImage,
+      motionRevealPreset: state.motionRevealPreset,
+      motionRevealCustomImage: state.motionRevealCustomImage,
+      motionRevealBrushRadius: state.motionRevealBrushRadius,
+      motionRevealFadeSpeed: state.motionRevealFadeSpeed,
+      waterRippleIntensity: state.waterRippleIntensity,
+      waterRippleDamping: state.waterRippleDamping
     }
     bc.postMessage({ type: 'SYNC_STATE', state: syncableState })
   }

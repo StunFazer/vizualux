@@ -1,22 +1,24 @@
-import { useRef, useState } from 'react'
+import { useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useTexture } from '@react-three/drei'
 import * as THREE from 'three'
 import { useTracker } from '../../hooks/useTracker'
 import { useStore } from '../../store/useStore'
 
-const MAX_PARTICLES = 250
-const PARTICLE_LIFESPAN = 1.2
+const MAX_PARTICLES = 600
 
-interface TrailParticle {
-  id: number
+interface UnifiedParticle {
+  active: boolean
   pos: THREE.Vector3
   vel: THREE.Vector3
   color: THREE.Color
-  scale: number
+  baseScale: number
   opacity: number
   life: number
   maxLife: number
+  isSparkle: boolean
+  twinkleFreq: number
+  twinklePhase: number
 }
 
 const randomRange = (min: number, max: number) => Math.random() * (max - min) + min
@@ -25,137 +27,270 @@ export function ParticleTrail() {
   const trackingDataRef = useTracker()
   const sparkleTexture = useTexture('/textures/sparkle.png')
 
-  const particlesRef = useRef<TrailParticle[]>([])
-  const [renderParticles, setRenderParticles] = useState<TrailParticle[]>([])
-  const frameCounter = useRef(0)
+  const trailStyle = useStore((s) => s.particleTrailStyle)
+  const userScale = useStore((s) => s.particleTrailSize)
+  const enableTwinkle = useStore((s) => s.particleTrailTwinkle)
 
-  // Mapping function for tracking points
+  const instancedMeshRef = useRef<THREE.InstancedMesh>(null)
+  const dummy = useMemo(() => new THREE.Object3D(), [])
+  const tempColor = useMemo(() => new THREE.Color(), [])
+
+  // Pre-allocate fixed pool of particles for zero GC overhead
+  const particles = useMemo<UnifiedParticle[]>(() => {
+    return Array.from({ length: MAX_PARTICLES }, () => ({
+      active: false,
+      pos: new THREE.Vector3(0, 0, -100),
+      vel: new THREE.Vector3(),
+      color: new THREE.Color('#ffffff'),
+      baseScale: 0.5,
+      opacity: 0,
+      life: 0,
+      maxLife: 1.0,
+      isSparkle: false,
+      twinkleFreq: 15,
+      twinklePhase: 0
+    }))
+  }, [])
+
+  // Smooth position tracking
+  const smoothedPoints = useRef<{ [key: string]: THREE.Vector3 }>({
+    lh: new THREE.Vector3(),
+    rh: new THREE.Vector3(),
+    lf: new THREE.Vector3(),
+    rf: new THREE.Vector3(),
+  })
+
+  const prevPoints = useRef<{ [key: string]: THREE.Vector3 | null }>({
+    lh: null, rh: null, lf: null, rf: null
+  })
+
   const toWorld = (pt: any) => pt ? new THREE.Vector3((pt.x - 0.5) * 20, -(pt.y - 0.5) * 10, 0) : null
+
+  // Helper to spawn a particle from pool
+  const spawnParticle = (
+    pos: THREE.Vector3,
+    vel: THREE.Vector3,
+    color: THREE.Color,
+    scale: number,
+    maxLife: number,
+    isSparkle: boolean
+  ) => {
+    // Find inactive particle
+    let p = particles.find((pt) => !pt.active)
+    if (!p) {
+      // Reuse oldest
+      p = particles[0]
+      let minLife = p.life
+      for (let i = 1; i < particles.length; i++) {
+        if (particles[i].life < minLife) {
+          minLife = particles[i].life
+          p = particles[i]
+        }
+      }
+    }
+
+    p.active = true
+    p.pos.copy(pos)
+    p.vel.copy(vel)
+    p.color.copy(color)
+    p.baseScale = scale
+    p.life = maxLife
+    p.maxLife = maxLife
+    p.opacity = 1.0
+    p.isSparkle = isSparkle
+    p.twinkleFreq = randomRange(12, 28)
+    p.twinklePhase = randomRange(0, Math.PI * 2)
+  }
 
   useFrame((state, delta) => {
     const data = trackingDataRef.current
-    const activePoints = [
-      toWorld(data.left_hand),
-      toWorld(data.right_hand),
-      toWorld(data.left_foot),
-      toWorld(data.right_foot),
+    const now = state.clock.elapsedTime
+    const dt = Math.min(delta, 0.1) // clamp delta against hitching
+
+    const targets = [
+      { key: 'lf', pt: toWorld(data.left_foot) },
+      { key: 'rf', pt: toWorld(data.right_foot) },
+      { key: 'lh', pt: toWorld(data.left_hand) },
+      { key: 'rh', pt: toWorld(data.right_hand) },
     ]
 
-    const trailStyle = useStore.getState().particleTrailStyle || 'rainbow'
+    // 1. Process tracking inputs & spawn both trails and sparkle bursts
+    targets.forEach(({ key, pt }) => {
+      if (!pt) {
+        prevPoints.current[key] = null
+        return
+      }
 
-    // 1. Emit trail particles from active tracking points
-    activePoints.forEach((pt) => {
-      if (!pt) return
+      // Smooth point using exponential lerp
+      const smoothLerp = 1.0 - Math.exp(-22.0 * dt)
+      smoothedPoints.current[key].lerp(pt, smoothLerp)
+      const currentPt = smoothedPoints.current[key]
 
-      // Emit 2 particles per point per frame
-      if (particlesRef.current.length < MAX_PARTICLES) {
-        for (let i = 0; i < 2; i++) {
-          let color: THREE.Color
-          let vel = new THREE.Vector3(randomRange(-0.6, 0.6), randomRange(-0.6, 0.6), 0)
-          let life = PARTICLE_LIFESPAN
+      const prev = prevPoints.current[key]
+      let speed = 0
+      if (prev) {
+        const dist = currentPt.distanceTo(prev)
+        speed = dist / Math.max(dt, 0.001)
+      }
+      prevPoints.current[key] = currentPt.clone()
 
-          if (trailStyle === 'fireflies') {
-            const hue = 0.12 + randomRange(-0.04, 0.04)
-            color = new THREE.Color().setHSL(hue, 1.0, 0.65)
-            vel = new THREE.Vector3(randomRange(-0.3, 0.3), randomRange(0.2, 0.8), 0)
-            life = 2.0
-          } else if (trailStyle === 'plasma') {
-            const hue = Math.random() < 0.5 ? 0.52 : 0.78
-            color = new THREE.Color().setHSL(hue, 1.0, 0.7)
-            vel = new THREE.Vector3(randomRange(-1.2, 1.2), randomRange(-1.2, 1.2), 0)
-            life = 0.8
-          } else if (trailStyle === 'embers') {
-            const hue = randomRange(0.02, 0.09)
-            color = new THREE.Color().setHSL(hue, 1.0, 0.6)
-            vel = new THREE.Vector3(randomRange(-0.4, 0.4), randomRange(0.5, 1.4), 0)
-            life = 1.6
-          } else if (trailStyle === 'aurora') {
-            const hue = randomRange(0.35, 0.65)
-            color = new THREE.Color().setHSL(hue, 0.9, 0.65)
-            vel = new THREE.Vector3(randomRange(-0.5, 0.5), randomRange(0.1, 0.5), 0)
-            life = 1.8
-          } else {
-            const hue = (state.clock.elapsedTime * 0.15 + (i * 0.02)) % 1.0
-            color = new THREE.Color().setHSL(hue, 1.0, 0.6)
-          }
+      // Determine palette color based on current style
+      const getColor = (offset: number) => {
+        const c = new THREE.Color()
+        if (trailStyle === 'fireflies') {
+          c.setHSL(0.14 + randomRange(-0.03, 0.03), 1.0, 0.65)
+        } else if (trailStyle === 'plasma') {
+          c.setHSL(Math.random() < 0.5 ? 0.52 : 0.78, 1.0, 0.7)
+        } else if (trailStyle === 'embers') {
+          c.setHSL(randomRange(0.02, 0.08), 1.0, 0.6)
+        } else if (trailStyle === 'aurora') {
+          c.setHSL(randomRange(0.38, 0.62), 0.9, 0.65)
+        } else if (trailStyle === 'stardust') {
+          const isSilver = Math.random() < 0.6
+          c.setHSL(isSilver ? 0.6 : 0.55, isSilver ? 0.3 : 0.8, 0.85)
+        } else {
+          // Rainbow
+          const hue = (now * 0.18 + offset) % 1.0
+          c.setHSL(hue, 1.0, 0.6)
+        }
+        return c
+      }
 
-          particlesRef.current.push({
-            id: Date.now() + Math.random(),
-            pos: pt.clone().add(new THREE.Vector3(
-              randomRange(-0.15, 0.15),
-              randomRange(-0.15, 0.15),
-              0
-            )),
-            vel,
-            color,
-            scale: randomRange(0.4, 0.6),
-            opacity: 1.0,
-            life,
-            maxLife: life
-          })
+      // Spawn continuous trail ribbon particles
+      for (let i = 0; i < 2; i++) {
+        const offset = new THREE.Vector3(
+          randomRange(-0.12, 0.12),
+          randomRange(-0.12, 0.12),
+          0
+        )
+        const vel = new THREE.Vector3(
+          randomRange(-0.4, 0.4),
+          randomRange(-0.4, 0.4),
+          0
+        )
+        const col = getColor(i * 0.05)
+        const life = trailStyle === 'fireflies' ? 1.8 : 1.2
+        spawnParticle(
+          currentPt.clone().add(offset),
+          vel,
+          col,
+          randomRange(0.35, 0.55) * userScale,
+          life,
+          false
+        )
+      }
+
+      // If moving rapidly, spawn sparkle bursts!
+      if (speed > 1.2) {
+        const burstCount = Math.min(6, Math.ceil(speed * 1.5))
+        for (let b = 0; b < burstCount; b++) {
+          const sparkVel = new THREE.Vector3(
+            randomRange(-1.2, 1.2),
+            randomRange(0.4, 1.8), // float upward like twinkling fairy dust
+            0
+          )
+          const sparkCol = enableTwinkle && Math.random() < 0.5
+            ? new THREE.Color('#ffffff') // bright twinkle star
+            : getColor(b * 0.1)
+
+          spawnParticle(
+            currentPt.clone().add(new THREE.Vector3(randomRange(-0.25, 0.25), randomRange(-0.25, 0.25), 0)),
+            sparkVel,
+            sparkCol,
+            randomRange(0.45, 0.75) * userScale,
+            randomRange(0.7, 1.4),
+            true
+          )
         }
       }
     })
 
-    // 2. Update active trail particles
-    for (let i = particlesRef.current.length - 1; i >= 0; i--) {
-      const p = particlesRef.current[i]
-      p.life -= delta
+    // 2. Physics & Particle Simulation Update
+    const mesh = instancedMeshRef.current
+    if (!mesh) return
 
-      if (p.life <= 0) {
-        particlesRef.current.splice(i, 1)
+    for (let i = 0; i < MAX_PARTICLES; i++) {
+      const p = particles[i]
+      if (!p.active) {
+        dummy.position.set(0, 0, -100)
+        dummy.scale.set(0, 0, 0)
+        dummy.updateMatrix()
+        mesh.setMatrixAt(i, dummy.matrix)
         continue
       }
 
-      // Physics: add slight organic turbulence/noise to velocity
-      const timeScale = state.clock.elapsedTime * 3 + p.id
-      p.vel.x += Math.sin(timeScale) * 0.25 * delta
-      p.vel.y += Math.cos(timeScale) * 0.25 * delta
+      p.life -= dt
+      if (p.life <= 0) {
+        p.active = false
+        dummy.position.set(0, 0, -100)
+        dummy.scale.set(0, 0, 0)
+        dummy.updateMatrix()
+        mesh.setMatrixAt(i, dummy.matrix)
+        continue
+      }
 
-      // Move particle
-      p.pos.addScaledVector(p.vel, delta)
+      // Physics: turbulence and upward float for sparkles
+      if (p.isSparkle) {
+        p.vel.y += 0.3 * dt // gentle buoyancy
+        p.vel.multiplyScalar(0.95)
+      } else {
+        const wave = Math.sin(now * 4.0 + i) * 0.4
+        p.vel.x += wave * dt
+        p.vel.multiplyScalar(0.94)
+      }
 
-      // Slow down velocity slightly
-      p.vel.multiplyScalar(0.96)
+      p.pos.addScaledVector(p.vel, dt)
 
-      // Shrink and fade out particle over its lifetime
       const lifeRatio = p.life / p.maxLife
-      p.scale = lifeRatio * 0.5
       p.opacity = lifeRatio
+
+      // Twinkle calculation: pulsating size & glint
+      let twinkleScale = 1.0
+      if (enableTwinkle && (p.isSparkle || trailStyle === 'stardust')) {
+        const pulse = Math.sin(now * p.twinkleFreq + p.twinklePhase)
+        twinkleScale = 0.6 + 0.7 * Math.max(0, pulse)
+      }
+
+      const finalScale = p.baseScale * lifeRatio * twinkleScale
+
+      dummy.position.copy(p.pos)
+      dummy.scale.set(finalScale, finalScale, 1)
+      dummy.updateMatrix()
+      mesh.setMatrixAt(i, dummy.matrix)
+
+      // Apply opacity to instance color for additive glow
+      tempColor.copy(p.color).multiplyScalar(p.opacity)
+      mesh.setColorAt(i, tempColor)
     }
 
-    // Throttle React renders
-    frameCounter.current++
-    if (frameCounter.current % 2 === 0) {
-      setRenderParticles([...particlesRef.current])
+    mesh.instanceMatrix.needsUpdate = true
+    if (mesh.instanceColor) {
+      mesh.instanceColor.needsUpdate = true
     }
   })
 
   return (
     <group>
-      {/* Dark Void Background */}
-      <mesh position={[0, 0, -0.2]}>
-        <planeGeometry args={[20, 10]} />
-        <meshBasicMaterial color="#000000" />
+      {/* Dark Ambient Void */}
+      <mesh position={[0, 0, -0.3]}>
+        <planeGeometry args={[26, 16]} />
+        <meshBasicMaterial color="#020308" />
       </mesh>
 
-      {/* Colorful Particle Sprites */}
-      {renderParticles.map((p) => (
-        <sprite 
-          key={p.id} 
-          position={p.pos} 
-          scale={[p.scale, p.scale, 1]}
-        >
-          <spriteMaterial 
-            map={sparkleTexture} 
-            color={p.color}
-            transparent={true} 
-            blending={THREE.AdditiveBlending}
-            opacity={p.opacity}
-            depthWrite={false}
-          />
-        </sprite>
-      ))}
+      {/* Instanced Particle & Sparkle Quads */}
+      <instancedMesh
+        ref={instancedMeshRef}
+        args={[undefined, undefined, MAX_PARTICLES]}
+        frustumCulled={false}
+      >
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial
+          map={sparkleTexture}
+          transparent={true}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </instancedMesh>
     </group>
   )
 }

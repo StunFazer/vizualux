@@ -99,6 +99,13 @@ export function NeonGrid() {
 
   const toWorld = (pt: any) => pt ? new THREE.Vector3((pt.x - 0.5) * 20, -(pt.y - 0.5) * 10, 0) : null
 
+  const smoothedLimbs = useRef({
+    lFoot: new THREE.Vector3(0, 0, 0),
+    rFoot: new THREE.Vector3(0, 0, 0),
+    lHand: new THREE.Vector3(0, 0, 0),
+    rHand: new THREE.Vector3(0, 0, 0),
+  })
+
   // Uniform array for 8 active impacts (hands, feet, step echoes)
   const impactsArray = useMemo(() => {
     return Array.from({ length: 8 }).map(() => new THREE.Vector3(0, 0, 0))
@@ -115,47 +122,85 @@ export function NeonGrid() {
   useFrame((state, delta) => {
     const data = trackingDataRef.current
     const isTracking = data.is_tracking
+    const dt = Math.min(delta, 0.05)
+    const smoothFactor = 1.0 - Math.exp(-22.0 * dt)
 
-    const lFoot = toWorld(data.left_foot)
-    const rFoot = toWorld(data.right_foot)
-    const lHand = toWorld(data.left_hand)
-    const rHand = toWorld(data.right_hand)
+    const rawLF = toWorld(data.left_foot)
+    const rawRF = toWorld(data.right_foot)
+    const rawLH = toWorld(data.left_hand)
+    const rawRH = toWorld(data.right_hand)
 
-    // Check step impacts for hex glyph spawning
+    if (rawLF) smoothedLimbs.current.lFoot.lerp(rawLF, smoothFactor)
+    if (rawRF) smoothedLimbs.current.rFoot.lerp(rawRF, smoothFactor)
+    if (rawLH) smoothedLimbs.current.lHand.lerp(rawLH, smoothFactor)
+    if (rawRH) smoothedLimbs.current.rHand.lerp(rawRH, smoothFactor)
+
+    const lFoot = rawLF ? smoothedLimbs.current.lFoot : null
+    const rFoot = rawRF ? smoothedLimbs.current.rFoot : null
+    const lHand = rawLH ? smoothedLimbs.current.lHand : null
+    const rHand = rawRH ? smoothedLimbs.current.rHand : null
+
+    // Check step impacts for hex glyph spawning with velocity smoothing
     const checkStep = (curr: THREE.Vector3 | null, prev: THREE.Vector3 | null, key: 'L' | 'R') => {
       if (curr) {
-        if (!prev || curr.distanceTo(prev) > 0.5) {
-          hexGlyphsRef.current.push({
-            pos: curr.clone().setZ(0.08),
-            scale: 0.2,
-            rotation: Math.random() * Math.PI,
-            opacity: 1.0
-          })
-          lastFootPos.current[key] = curr.clone()
+        if (prev) {
+          const speed = curr.distanceTo(prev) / Math.max(dt, 0.001)
+          if (speed > 4.2) {
+            hexGlyphsRef.current.push({
+              pos: curr.clone().setZ(0.08),
+              scale: 0.2,
+              rotation: Math.random() * Math.PI,
+              opacity: 1.0
+            })
+          }
         }
+        lastFootPos.current[key] = curr.clone()
+      } else {
+        lastFootPos.current[key] = null
       }
     }
     checkStep(lFoot, lastFootPos.current.L, 'L')
     checkStep(rFoot, lastFootPos.current.R, 'R')
 
-    // Update active impacts
+    // Update active impacts with smooth intensity fade
     let idx = 0
     if (isTracking) {
-      if (lFoot) { impactsArray[idx++].set(lFoot.x, lFoot.y, 1.0) }
-      if (rFoot) { impactsArray[idx++].set(rFoot.x, rFoot.y, 1.0) }
-      if (lHand) { impactsArray[idx++].set(lHand.x, lHand.y, 0.8) }
-      if (rHand) { impactsArray[idx++].set(rHand.x, rHand.y, 0.8) }
+      if (lFoot) {
+        impactsArray[idx].x = lFoot.x
+        impactsArray[idx].y = lFoot.y
+        impactsArray[idx].z = THREE.MathUtils.lerp(impactsArray[idx].z, 1.0, smoothFactor)
+        idx++
+      }
+      if (rFoot) {
+        impactsArray[idx].x = rFoot.x
+        impactsArray[idx].y = rFoot.y
+        impactsArray[idx].z = THREE.MathUtils.lerp(impactsArray[idx].z, 1.0, smoothFactor)
+        idx++
+      }
+      if (lHand) {
+        impactsArray[idx].x = lHand.x
+        impactsArray[idx].y = lHand.y
+        impactsArray[idx].z = THREE.MathUtils.lerp(impactsArray[idx].z, 0.8, smoothFactor)
+        idx++
+      }
+      if (rHand) {
+        impactsArray[idx].x = rHand.x
+        impactsArray[idx].y = rHand.y
+        impactsArray[idx].z = THREE.MathUtils.lerp(impactsArray[idx].z, 0.8, smoothFactor)
+        idx++
+      }
     }
     while (idx < 8) {
-      impactsArray[idx++].set(0, 0, 0)
+      impactsArray[idx].z = THREE.MathUtils.lerp(impactsArray[idx].z, 0.0, smoothFactor * 0.5)
+      idx++
     }
 
     // Update hex glyphs
     for (let i = hexGlyphsRef.current.length - 1; i >= 0; i--) {
       const g = hexGlyphsRef.current[i]
-      g.scale += delta * 2.8
-      g.rotation += delta * 1.5
-      g.opacity -= delta * 0.9
+      g.scale += dt * 2.8
+      g.rotation += dt * 1.5
+      g.opacity -= dt * 0.9
       if (g.opacity <= 0) {
         hexGlyphsRef.current.splice(i, 1)
       }

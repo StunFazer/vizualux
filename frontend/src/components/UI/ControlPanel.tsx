@@ -36,7 +36,17 @@ export function ControlPanel() {
     silhouetteColor, setSilhouetteColor,
     silhouetteRainbow, setSilhouetteRainbow,
     silhouetteTrailDecay, setSilhouetteTrailDecay,
-    particleTrailStyle, setParticleTrailStyle
+    particleTrailStyle, setParticleTrailStyle,
+    particleTrailSize, setParticleTrailSize,
+    particleTrailTwinkle, setParticleTrailTwinkle,
+    waterRippleIntensity, setWaterRippleIntensity,
+    waterRippleDamping, setWaterRippleDamping,
+    scatterPreset, setScatterPreset,
+    scatterCustomImage, setScatterCustomImage,
+    motionRevealPreset, setMotionRevealPreset,
+    motionRevealCustomImage, setMotionRevealCustomImage,
+    motionRevealBrushRadius, setMotionRevealBrushRadius,
+    motionRevealFadeSpeed, setMotionRevealFadeSpeed
   } = useStore()
 
   const updateThreshold = (key: 'detection' | 'presence' | 'tracking', value: number) => {
@@ -79,131 +89,88 @@ export function ControlPanel() {
         <h3 style={{ margin: '0', fontSize: '0.9rem', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '1px' }}>Mode Select</h3>
         
         <button 
-          onClick={() => setMode('Asteroids')}
+          onClick={() => setMode('ParticleTrail')}
           style={{
             padding: '10px 15px',
-            backgroundColor: currentMode === 'Asteroids' ? '#3b82f6' : 'rgba(255,255,255,0.1)',
-            border: 'none',
+            backgroundColor: currentMode === 'ParticleTrail' ? '#3b82f6' : 'rgba(255,255,255,0.1)',
+            border: currentMode === 'ParticleTrail' ? '1px solid #60a5fa' : 'none',
             borderRadius: '6px',
             color: 'white',
             cursor: 'pointer',
             transition: 'all 0.2s',
-            textAlign: 'left'
+            textAlign: 'left',
+            fontWeight: currentMode === 'ParticleTrail' ? 'bold' : 'normal'
           }}
         >
-          Rigid Body Sandbox
-        </button>
-        
-        <button 
-          onClick={() => setMode('FluidSimulation')}
-          style={{
-            padding: '10px 15px',
-            backgroundColor: currentMode === 'FluidSimulation' ? '#3b82f6' : 'rgba(255,255,255,0.1)',
-            border: 'none',
-            borderRadius: '6px',
-            color: 'white',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            textAlign: 'left'
-          }}
-        >
-          Fluid Dynamics
+          Particle & Sparkle Trail
         </button>
 
         <button 
-          onClick={() => setMode('KoiPond')}
+          onClick={() => setMode('WaterRipples')}
           style={{
             padding: '10px 15px',
-            backgroundColor: currentMode === 'KoiPond' ? '#3b82f6' : 'rgba(255,255,255,0.1)',
-            border: 'none',
+            backgroundColor: currentMode === 'WaterRipples' ? '#0284c7' : 'rgba(255,255,255,0.1)',
+            border: currentMode === 'WaterRipples' ? '1px solid #38bdf8' : 'none',
             borderRadius: '6px',
             color: 'white',
             cursor: 'pointer',
             transition: 'all 0.2s',
-            textAlign: 'left'
+            textAlign: 'left',
+            fontWeight: currentMode === 'WaterRipples' ? 'bold' : 'normal'
           }}
         >
-          Interactive Koi Pond
+          Interactive Water Ripples
+        </button>
+
+        <button 
+          onClick={() => setMode('Scatter')}
+          style={{
+            padding: '10px 15px',
+            backgroundColor: currentMode === 'Scatter' ? '#10b981' : 'rgba(255,255,255,0.1)',
+            border: currentMode === 'Scatter' ? '1px solid #34d399' : 'none',
+            borderRadius: '6px',
+            color: 'white',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            textAlign: 'left',
+            fontWeight: currentMode === 'Scatter' ? 'bold' : 'normal'
+          }}
+        >
+          Object Scatter (Leaves/Snow)
         </button>
 
         <button 
           onClick={() => setMode('MotionReveal')}
           style={{
             padding: '10px 15px',
-            backgroundColor: currentMode === 'MotionReveal' ? '#3b82f6' : 'rgba(255,255,255,0.1)',
-            border: 'none',
+            backgroundColor: currentMode === 'MotionReveal' ? '#8b5cf6' : 'rgba(255,255,255,0.1)',
+            border: currentMode === 'MotionReveal' ? '1px solid #a78bfa' : 'none',
             borderRadius: '6px',
             color: 'white',
             cursor: 'pointer',
             transition: 'all 0.2s',
-            textAlign: 'left'
+            textAlign: 'left',
+            fontWeight: currentMode === 'MotionReveal' ? 'bold' : 'normal'
           }}
         >
-          Forest Motion Reveal
+          Motion Reveal (Gallery & Custom)
         </button>
 
         <button 
-          onClick={() => setMode('ScatterLeaves')}
+          onClick={() => setMode('FluidSimulation')}
           style={{
             padding: '10px 15px',
-            backgroundColor: currentMode === 'ScatterLeaves' ? '#3b82f6' : 'rgba(255,255,255,0.1)',
-            border: 'none',
+            backgroundColor: currentMode === 'FluidSimulation' ? '#3b82f6' : 'rgba(255,255,255,0.1)',
+            border: currentMode === 'FluidSimulation' ? '1px solid #60a5fa' : 'none',
             borderRadius: '6px',
             color: 'white',
             cursor: 'pointer',
             transition: 'all 0.2s',
-            textAlign: 'left'
+            textAlign: 'left',
+            fontWeight: currentMode === 'FluidSimulation' ? 'bold' : 'normal'
           }}
         >
-          Leaf Scatter
-        </button>
-
-        <button 
-          onClick={() => setMode('Sparkles')}
-          style={{
-            padding: '10px 15px',
-            backgroundColor: currentMode === 'Sparkles' ? '#3b82f6' : 'rgba(255,255,255,0.1)',
-            border: 'none',
-            borderRadius: '6px',
-            color: 'white',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            textAlign: 'left'
-          }}
-        >
-          twinkling Sparkles
-        </button>
-
-        <button 
-          onClick={() => setMode('ParticleTrail')}
-          style={{
-            padding: '10px 15px',
-            backgroundColor: currentMode === 'ParticleTrail' ? '#3b82f6' : 'rgba(255,255,255,0.1)',
-            border: 'none',
-            borderRadius: '6px',
-            color: 'white',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            textAlign: 'left'
-          }}
-        >
-          Rainbow Particle Trail
-        </button>
-
-        <button 
-          onClick={() => setMode('SandyShore')}
-          style={{
-            padding: '10px 15px',
-            backgroundColor: currentMode === 'SandyShore' ? '#3b82f6' : 'rgba(255,255,255,0.1)',
-            border: 'none',
-            borderRadius: '6px',
-            color: 'white',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            textAlign: 'left'
-          }}
-        >
-          Sandy Shore ripples
+          Fluid Dynamics
         </button>
 
         <button 
@@ -535,33 +502,347 @@ export function ControlPanel() {
           gap: '10px'
         }}>
           <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            Particle Trail Style
+            Particle Trail & Sparkles
           </div>
+          
+          <div>
+            <div style={labelStyle}><span>Trail Style</span></div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
+              {[
+                { id: 'rainbow', label: 'Rainbow' },
+                { id: 'fireflies', label: 'Fireflies' },
+                { id: 'plasma', label: 'Plasma' },
+                { id: 'embers', label: 'Embers' },
+                { id: 'aurora', label: 'Aurora' },
+                { id: 'stardust', label: 'Stardust' },
+              ].map((st) => (
+                <button
+                  key={st.id}
+                  onClick={() => setParticleTrailStyle(st.id as any)}
+                  style={{
+                    padding: '6px 4px',
+                    fontSize: '0.7rem',
+                    backgroundColor: particleTrailStyle === st.id ? '#3b82f6' : 'rgba(255,255,255,0.1)',
+                    border: particleTrailStyle === st.id ? '1px solid #93c5fd' : 'none',
+                    borderRadius: '4px',
+                    color: 'white',
+                    cursor: 'pointer',
+                    textAlign: 'center'
+                  }}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              onClick={() => setParticleTrailTwinkle(!particleTrailTwinkle)}
+              style={{
+                flex: 1,
+                padding: '6px 8px',
+                fontSize: '0.75rem',
+                backgroundColor: particleTrailTwinkle ? '#8b5cf6' : 'rgba(255,255,255,0.1)',
+                border: particleTrailTwinkle ? '1px solid #c4b5fd' : 'none',
+                borderRadius: '4px',
+                color: 'white',
+                cursor: 'pointer'
+              }}
+            >
+              {particleTrailTwinkle ? 'Twinkle FX: ON' : 'Twinkle FX: OFF'}
+            </button>
+          </div>
+
+          <div>
+            <div style={labelStyle}>
+              <span>Particle Size</span>
+              <span>{(particleTrailSize * 100).toFixed(0)}%</span>
+            </div>
+            <input
+              type="range"
+              min="0.2"
+              max="1.5"
+              step="0.05"
+              value={particleTrailSize}
+              onChange={(e) => setParticleTrailSize(parseFloat(e.target.value))}
+              style={sliderStyle}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Water Ripples Contextual Controls */}
+      {currentMode === 'WaterRipples' && (
+        <div style={{
+          marginTop: '15px',
+          padding: '12px',
+          background: 'rgba(2, 132, 199, 0.12)',
+          border: '1px solid rgba(2, 132, 199, 0.35)',
+          borderRadius: '8px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '10px'
+        }}>
+          <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#7dd3fc', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Water Ripple Physics
+          </div>
+
+          <div>
+            <div style={labelStyle}>
+              <span>Ripple Wave Intensity</span>
+              <span>{(waterRippleIntensity * 100).toFixed(0)}%</span>
+            </div>
+            <input
+              type="range"
+              min="0.3"
+              max="2.5"
+              step="0.1"
+              value={waterRippleIntensity}
+              onChange={(e) => setWaterRippleIntensity(parseFloat(e.target.value))}
+              style={sliderStyle}
+            />
+          </div>
+
+          <div>
+            <div style={labelStyle}>
+              <span>Wave Damping</span>
+              <span>{Math.round(waterRippleDamping * 100)}%</span>
+            </div>
+            <input
+              type="range"
+              min="0.90"
+              max="0.99"
+              step="0.01"
+              value={waterRippleDamping}
+              onChange={(e) => setWaterRippleDamping(parseFloat(e.target.value))}
+              style={sliderStyle}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Scatter Contextual Controls */}
+      {currentMode === 'Scatter' && (
+        <div style={{
+          marginTop: '15px',
+          padding: '12px',
+          background: 'rgba(16, 185, 129, 0.12)',
+          border: '1px solid rgba(16, 185, 129, 0.35)',
+          borderRadius: '8px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '10px'
+        }}>
+          <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#6ee7b7', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Scatter Presets & Custom Sprite
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
             {[
-              { id: 'rainbow', label: 'Rainbow Stars' },
-              { id: 'fireflies', label: 'Golden Fireflies' },
-              { id: 'plasma', label: 'Electric Plasma' },
-              { id: 'embers', label: 'Volcanic Embers' },
-              { id: 'aurora', label: 'Aurora Borealis' },
-            ].map((st) => (
+              { id: 'leaves', label: 'Maple Leaves' },
+              { id: 'snowflakes', label: 'Snowflakes' },
+              { id: 'petals', label: 'Sakura Petals' },
+              { id: 'coins', label: 'Gold Coins' },
+              { id: 'custom', label: 'Custom Sprite' },
+            ].map((p) => (
               <button
-                key={st.id}
-                onClick={() => setParticleTrailStyle(st.id as any)}
+                key={p.id}
+                onClick={() => setScatterPreset(p.id as any)}
                 style={{
                   padding: '6px 4px',
                   fontSize: '0.7rem',
-                  backgroundColor: particleTrailStyle === st.id ? '#3b82f6' : 'rgba(255,255,255,0.1)',
-                  border: particleTrailStyle === st.id ? '1px solid #93c5fd' : 'none',
+                  backgroundColor: scatterPreset === p.id ? '#10b981' : 'rgba(255,255,255,0.1)',
+                  border: scatterPreset === p.id ? '1px solid #6ee7b7' : 'none',
                   borderRadius: '4px',
                   color: 'white',
                   cursor: 'pointer',
                   textAlign: 'center'
                 }}
               >
-                {st.label}
+                {p.label}
               </button>
             ))}
+          </div>
+
+          <div>
+            <label
+              style={{
+                display: 'block',
+                padding: '6px 10px',
+                backgroundColor: 'rgba(255,255,255,0.1)',
+                border: '1px dashed rgba(255,255,255,0.3)',
+                borderRadius: '4px',
+                textAlign: 'center',
+                cursor: 'pointer',
+                fontSize: '0.75rem',
+                color: '#6ee7b7'
+              }}
+            >
+              {scatterCustomImage ? 'Replace Custom Sprite' : 'Upload Custom Sprite Image'}
+              <input
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) {
+                    const reader = new FileReader()
+                    reader.onload = (evt) => {
+                      const dataUrl = evt.target?.result as string
+                      setScatterCustomImage(dataUrl)
+                      setScatterPreset('custom')
+                    }
+                    reader.readAsDataURL(file)
+                  }
+                }}
+              />
+            </label>
+            {scatterCustomImage && (
+              <button
+                onClick={() => { setScatterCustomImage(null); setScatterPreset('leaves'); }}
+                style={{
+                  width: '100%',
+                  marginTop: '4px',
+                  padding: '4px',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  color: '#f87171',
+                  fontSize: '0.7rem',
+                  cursor: 'pointer'
+                }}
+              >
+                Reset to Default
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Motion Reveal Contextual Controls */}
+      {currentMode === 'MotionReveal' && (
+        <div style={{
+          marginTop: '15px',
+          padding: '12px',
+          background: 'rgba(139, 92, 246, 0.12)',
+          border: '1px solid rgba(139, 92, 246, 0.35)',
+          borderRadius: '8px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '10px'
+        }}>
+          <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#c4b5fd', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Motion Reveal Mask Gallery
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px' }}>
+            {[
+              { id: 'nebula', label: 'Cosmic Nebula' },
+              { id: 'garden', label: 'Forest Garden' },
+              { id: 'lava', label: 'Lava Crust' },
+              { id: 'custom', label: 'Custom Image' },
+            ].map((pr) => (
+              <button
+                key={pr.id}
+                onClick={() => setMotionRevealPreset(pr.id as any)}
+                style={{
+                  padding: '6px 4px',
+                  fontSize: '0.7rem',
+                  backgroundColor: motionRevealPreset === pr.id ? '#8b5cf6' : 'rgba(255,255,255,0.1)',
+                  border: motionRevealPreset === pr.id ? '1px solid #c4b5fd' : 'none',
+                  borderRadius: '4px',
+                  color: 'white',
+                  cursor: 'pointer',
+                  textAlign: 'center'
+                }}
+              >
+                {pr.label}
+              </button>
+            ))}
+          </div>
+
+          <div>
+            <label
+              style={{
+                display: 'block',
+                padding: '6px 10px',
+                backgroundColor: 'rgba(255,255,255,0.1)',
+                border: '1px dashed rgba(255,255,255,0.3)',
+                borderRadius: '4px',
+                textAlign: 'center',
+                cursor: 'pointer',
+                fontSize: '0.75rem',
+                color: '#c4b5fd'
+              }}
+            >
+              {motionRevealCustomImage ? 'Replace Hidden Image' : 'Upload Hidden Image to Reveal'}
+              <input
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) {
+                    const reader = new FileReader()
+                    reader.onload = (evt) => {
+                      const dataUrl = evt.target?.result as string
+                      setMotionRevealCustomImage(dataUrl)
+                      setMotionRevealPreset('custom')
+                    }
+                    reader.readAsDataURL(file)
+                  }
+                }}
+              />
+            </label>
+            {motionRevealCustomImage && (
+              <button
+                onClick={() => { setMotionRevealCustomImage(null); setMotionRevealPreset('nebula'); }}
+                style={{
+                  width: '100%',
+                  marginTop: '4px',
+                  padding: '4px',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  color: '#f87171',
+                  fontSize: '0.7rem',
+                  cursor: 'pointer'
+                }}
+              >
+                Reset to Default
+              </button>
+            )}
+          </div>
+
+          <div>
+            <div style={labelStyle}>
+              <span>Brush Radius</span>
+              <span>{motionRevealBrushRadius}px</span>
+            </div>
+            <input
+              type="range"
+              min="30"
+              max="160"
+              step="5"
+              value={motionRevealBrushRadius}
+              onChange={(e) => setMotionRevealBrushRadius(parseInt(e.target.value, 10))}
+              style={sliderStyle}
+            />
+          </div>
+
+          <div>
+            <div style={labelStyle}>
+              <span>Trail Fade Speed</span>
+              <span>{motionRevealFadeSpeed.toFixed(2)}s</span>
+            </div>
+            <input
+              type="range"
+              min="0.1"
+              max="1.0"
+              step="0.05"
+              value={motionRevealFadeSpeed}
+              onChange={(e) => setMotionRevealFadeSpeed(parseFloat(e.target.value))}
+              style={sliderStyle}
+            />
           </div>
         </div>
       )}

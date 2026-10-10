@@ -63,14 +63,33 @@ export function ElectricPlasma() {
 
   const toWorld = (pt: any) => pt ? new THREE.Vector3((pt.x - 0.5) * 20, -(pt.y - 0.5) * 10, 0) : null
 
+  const smoothedNodes = useRef({
+    lFoot: new THREE.Vector3(0, 0, 0),
+    rFoot: new THREE.Vector3(0, 0, 0),
+    lHand: new THREE.Vector3(0, 0, 0),
+    rHand: new THREE.Vector3(0, 0, 0),
+  })
+
   useFrame((_, delta) => {
     const data = trackingDataRef.current
     const isTracking = data.is_tracking
+    const dt = Math.min(delta, 0.05)
+    const smoothFactor = 1.0 - Math.exp(-24.0 * dt)
 
-    const lFoot = toWorld(data.left_foot)
-    const rFoot = toWorld(data.right_foot)
-    const lHand = toWorld(data.left_hand)
-    const rHand = toWorld(data.right_hand)
+    const rawLF = toWorld(data.left_foot)
+    const rawRF = toWorld(data.right_foot)
+    const rawLH = toWorld(data.left_hand)
+    const rawRH = toWorld(data.right_hand)
+
+    if (rawLF) smoothedNodes.current.lFoot.lerp(rawLF, smoothFactor)
+    if (rawRF) smoothedNodes.current.rFoot.lerp(rawRF, smoothFactor)
+    if (rawLH) smoothedNodes.current.lHand.lerp(rawLH, smoothFactor)
+    if (rawRH) smoothedNodes.current.rHand.lerp(rawRH, smoothFactor)
+
+    const lFoot = rawLF ? smoothedNodes.current.lFoot : null
+    const rFoot = rawRF ? smoothedNodes.current.rFoot : null
+    const lHand = rawLH ? smoothedNodes.current.lHand : null
+    const rHand = rawRH ? smoothedNodes.current.rHand : null
 
     const activeNodes: THREE.Vector3[] = []
     if (isTracking) {
@@ -80,35 +99,39 @@ export function ElectricPlasma() {
       if (rHand) activeNodes.push(rHand)
     }
 
-    // 1. Spawning plasma shockwaves on foot impact
+    // 1. Spawning plasma shockwaves on foot impact with velocity smoothing
     const checkStep = (curr: THREE.Vector3 | null, prev: THREE.Vector3 | null, key: 'L' | 'R') => {
       if (curr) {
-        if (!prev || curr.distanceTo(prev) > 0.45) {
-          pulsesRef.current.push({
-            pos: curr.clone().setZ(0.04),
-            radius: 0.15,
-            opacity: 1.0,
-            color: new THREE.Color().setHSL(0.55 + Math.random() * 0.15, 1.0, 0.7) // Electric blue/cyan
-          })
+        if (prev) {
+          const speed = curr.distanceTo(prev) / Math.max(dt, 0.001)
+          if (speed > 4.0) {
+            pulsesRef.current.push({
+              pos: curr.clone().setZ(0.04),
+              radius: 0.15,
+              opacity: 1.0,
+              color: new THREE.Color().setHSL(0.55 + Math.random() * 0.15, 1.0, 0.7) // Electric blue/cyan
+            })
 
-          // Spawn burst of sparks
-          for (let s = 0; s < 12; s++) {
-            if (sparksRef.current.length < MAX_SPARKS) {
-              const angle = Math.random() * Math.PI * 2
-              const speed = Math.random() * 4.0 + 1.0
-              sparksRef.current.push({
-                pos: curr.clone().setZ(0.05),
-                vel: new THREE.Vector3(Math.cos(angle) * speed, Math.sin(angle) * speed, (Math.random() - 0.5) * 1.5),
-                color: new THREE.Color().setHSL(0.55 + Math.random() * 0.1, 1.0, 0.8),
-                size: Math.random() * 0.08 + 0.04,
-                opacity: 1.0,
-                life: 0.8
-              })
+            // Spawn burst of sparks
+            for (let s = 0; s < 12; s++) {
+              if (sparksRef.current.length < MAX_SPARKS) {
+                const angle = Math.random() * Math.PI * 2
+                const speed = Math.random() * 4.0 + 1.0
+                sparksRef.current.push({
+                  pos: curr.clone().setZ(0.05),
+                  vel: new THREE.Vector3(Math.cos(angle) * speed, Math.sin(angle) * speed, (Math.random() - 0.5) * 1.5),
+                  color: new THREE.Color().setHSL(0.55 + Math.random() * 0.1, 1.0, 0.8),
+                  size: Math.random() * 0.08 + 0.04,
+                  opacity: 1.0,
+                  life: 0.8
+                })
+              }
             }
           }
-
-          lastFootPos.current[key] = curr.clone()
         }
+        lastFootPos.current[key] = curr.clone()
+      } else {
+        lastFootPos.current[key] = null
       }
     }
     checkStep(lFoot, lastFootPos.current.L, 'L')
@@ -117,10 +140,10 @@ export function ElectricPlasma() {
     // 2. Procedural Lightning Arcs
     // Arc 1: Left Hand to Right Hand (Tesla Bridge)
     if (lHand && rHand && bolt1GeoRef.current) {
-      const path1 = createLightningPath(lHand, rHand, 0.6)
+      const path1 = createLightningPath(lHand, rHand, 0.5)
       bolt1GeoRef.current.setFromPoints(path1)
     } else if (lFoot && rFoot && bolt1GeoRef.current) {
-      const path1 = createLightningPath(lFoot, rFoot, 0.5)
+      const path1 = createLightningPath(lFoot, rFoot, 0.45)
       bolt1GeoRef.current.setFromPoints(path1)
     } else if (bolt1GeoRef.current) {
       bolt1GeoRef.current.setFromPoints([new THREE.Vector3(0, 0, -20), new THREE.Vector3(0, 0, -20)])
@@ -128,8 +151,8 @@ export function ElectricPlasma() {
 
     // Arc 2: Left Foot to Ground Node
     if (lFoot && bolt2GeoRef.current) {
-      const groundNode = lFoot.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.5, -1.8, 0))
-      const path2 = createLightningPath(lFoot, groundNode, 0.4)
+      const groundNode = lFoot.clone().add(new THREE.Vector3(Math.sin(Date.now() * 0.005) * 0.8, -1.8, 0))
+      const path2 = createLightningPath(lFoot, groundNode, 0.35)
       bolt2GeoRef.current.setFromPoints(path2)
     } else if (bolt2GeoRef.current) {
       bolt2GeoRef.current.setFromPoints([new THREE.Vector3(0, 0, -20), new THREE.Vector3(0, 0, -20)])
@@ -137,8 +160,8 @@ export function ElectricPlasma() {
 
     // Arc 3: Right Foot to Ground Node
     if (rFoot && bolt3GeoRef.current) {
-      const groundNode = rFoot.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.5, -1.8, 0))
-      const path3 = createLightningPath(rFoot, groundNode, 0.4)
+      const groundNode = rFoot.clone().add(new THREE.Vector3(Math.cos(Date.now() * 0.005) * 0.8, -1.8, 0))
+      const path3 = createLightningPath(rFoot, groundNode, 0.35)
       bolt3GeoRef.current.setFromPoints(path3)
     } else if (bolt3GeoRef.current) {
       bolt3GeoRef.current.setFromPoints([new THREE.Vector3(0, 0, -20), new THREE.Vector3(0, 0, -20)])

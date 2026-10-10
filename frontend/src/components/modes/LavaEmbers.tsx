@@ -127,9 +127,42 @@ export function LavaEmbers() {
     [size]
   )
 
+  // Exponentially smoothed screen coordinates
+  const smoothedScreen = useRef({
+    lFoot: new THREE.Vector2(-10, -10),
+    rFoot: new THREE.Vector2(-10, -10),
+    lHand: new THREE.Vector2(-10, -10),
+    rHand: new THREE.Vector2(-10, -10),
+  })
+
+  // Exponentially smoothed limbs
+  const smoothedLimbs = useRef({
+    lFoot: new THREE.Vector3(0, 0, 0),
+    rFoot: new THREE.Vector3(0, 0, 0),
+    lHand: new THREE.Vector3(0, 0, 0),
+    rHand: new THREE.Vector3(0, 0, 0),
+  })
+
   useFrame((state, delta) => {
     const data = trackingDataRef.current
     const isTracking = data.is_tracking
+    const dt = Math.min(delta, 0.05)
+    const smoothFactor = 1.0 - Math.exp(-22.0 * dt)
+
+    const updateSmoothScreen = (target: any, current: THREE.Vector2) => {
+      const scr = toScreen(target)
+      if (scr) {
+        if (current.x < -5) current.copy(scr)
+        else current.lerp(scr, smoothFactor)
+      } else {
+        current.set(-10, -10)
+      }
+    }
+
+    updateSmoothScreen(data.left_foot, smoothedScreen.current.lFoot)
+    updateSmoothScreen(data.right_foot, smoothedScreen.current.rFoot)
+    updateSmoothScreen(data.left_hand, smoothedScreen.current.lHand)
+    updateSmoothScreen(data.right_hand, smoothedScreen.current.rHand)
 
     // Update Lava floor shader
     if (lavaMatRef.current) {
@@ -138,17 +171,27 @@ export function LavaEmbers() {
       lavaMatRef.current.uniforms.u_tracking.value = isTracking ? 1.0 : 0.0
 
       if (isTracking) {
-        lavaMatRef.current.uniforms.u_lFoot.value = toScreen(data.left_foot)
-        lavaMatRef.current.uniforms.u_rFoot.value = toScreen(data.right_foot)
-        lavaMatRef.current.uniforms.u_lHand.value = toScreen(data.left_hand)
-        lavaMatRef.current.uniforms.u_rHand.value = toScreen(data.right_hand)
+        lavaMatRef.current.uniforms.u_lFoot.value.copy(smoothedScreen.current.lFoot)
+        lavaMatRef.current.uniforms.u_rFoot.value.copy(smoothedScreen.current.rFoot)
+        lavaMatRef.current.uniforms.u_lHand.value.copy(smoothedScreen.current.lHand)
+        lavaMatRef.current.uniforms.u_rHand.value.copy(smoothedScreen.current.rHand)
       }
     }
 
-    const lFoot = toWorld(data.left_foot)
-    const rFoot = toWorld(data.right_foot)
-    const lHand = toWorld(data.left_hand)
-    const rHand = toWorld(data.right_hand)
+    const rawLF = toWorld(data.left_foot)
+    const rawRF = toWorld(data.right_foot)
+    const rawLH = toWorld(data.left_hand)
+    const rawRH = toWorld(data.right_hand)
+
+    if (rawLF) smoothedLimbs.current.lFoot.lerp(rawLF, smoothFactor)
+    if (rawRF) smoothedLimbs.current.rFoot.lerp(rawRF, smoothFactor)
+    if (rawLH) smoothedLimbs.current.lHand.lerp(rawLH, smoothFactor)
+    if (rawRH) smoothedLimbs.current.rHand.lerp(rawRH, smoothFactor)
+
+    const lFoot = rawLF ? smoothedLimbs.current.lFoot : null
+    const rFoot = rawRF ? smoothedLimbs.current.rFoot : null
+    const lHand = rawLH ? smoothedLimbs.current.lHand : null
+    const rHand = rawRH ? smoothedLimbs.current.rHand : null
 
     const activeNodes: THREE.Vector3[] = []
     if (isTracking) {
@@ -158,42 +201,46 @@ export function LavaEmbers() {
       if (rHand) activeNodes.push(rHand)
     }
 
-    // Step check for magma shockwaves and ember fountain
+    // Step check for magma shockwaves and ember fountain with velocity smoothing
     const checkStep = (curr: THREE.Vector3 | null, prev: THREE.Vector3 | null, key: 'L' | 'R') => {
       if (curr) {
-        if (!prev || curr.distanceTo(prev) > 0.45) {
-          ringsRef.current.push({
-            pos: curr.clone().setZ(0.04),
-            radius: 0.2,
-            opacity: 1.0
-          })
+        if (prev) {
+          const speed = curr.distanceTo(prev) / Math.max(dt, 0.001)
+          if (speed > 4.2) {
+            ringsRef.current.push({
+              pos: curr.clone().setZ(0.04),
+              radius: 0.2,
+              opacity: 1.0
+            })
 
-          // Spawn burst of rising embers
-          for (let e = 0; e < 18; e++) {
-            if (embersRef.current.length < MAX_EMBERS) {
-              const angle = Math.random() * Math.PI * 2
-              const spread = Math.random() * 2.2 + 0.5
-              embersRef.current.push({
-                pos: curr.clone().add(new THREE.Vector3(
-                  (Math.random() - 0.5) * 0.4,
-                  (Math.random() - 0.5) * 0.4,
-                  Math.random() * 0.2
-                )),
-                vel: new THREE.Vector3(
-                  Math.cos(angle) * spread,
-                  Math.sin(angle) * spread + Math.random() * 1.5, // Natural upward heat draft
-                  Math.random() * 0.5
-                ),
-                size: Math.random() * 0.12 + 0.05,
-                life: 1.8,
-                maxLife: 1.8,
-                swirlOffset: Math.random() * 10
-              })
+            // Spawn burst of rising embers
+            for (let e = 0; e < 18; e++) {
+              if (embersRef.current.length < MAX_EMBERS) {
+                const angle = Math.random() * Math.PI * 2
+                const spread = Math.random() * 2.2 + 0.5
+                embersRef.current.push({
+                  pos: curr.clone().add(new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.4,
+                    (Math.random() - 0.5) * 0.4,
+                    Math.random() * 0.2
+                  )),
+                  vel: new THREE.Vector3(
+                    Math.cos(angle) * spread,
+                    Math.sin(angle) * spread + Math.random() * 1.5, // Natural upward heat draft
+                    Math.random() * 0.5
+                  ),
+                  size: Math.random() * 0.12 + 0.05,
+                  life: 1.8,
+                  maxLife: 1.8,
+                  swirlOffset: Math.random() * 10
+                })
+              }
             }
           }
-
-          lastFootPos.current[key] = curr.clone()
         }
+        lastFootPos.current[key] = curr.clone()
+      } else {
+        lastFootPos.current[key] = null
       }
     }
     checkStep(lFoot, lastFootPos.current.L, 'L')

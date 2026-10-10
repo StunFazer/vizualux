@@ -1,21 +1,16 @@
 import { Canvas } from '@react-three/fiber'
-import { Physics } from '@react-three/rapier'
 import { Suspense } from 'react'
 import { useStore } from '../store/useStore'
-import { Asteroids } from './modes/Asteroids'
-import { FluidSimulation } from './modes/FluidSimulation'
-import { KoiPond } from './modes/KoiPond'
-import { MotionReveal } from './modes/MotionReveal'
-import { ScatterLeaves } from './modes/ScatterLeaves'
-import { Sparkles } from './modes/Sparkles'
 import { ParticleTrail } from './modes/ParticleTrail'
-import { SandyShore } from './modes/SandyShore'
+import { WaterRipples } from './modes/WaterRipples'
+import { Scatter } from './modes/Scatter'
+import { MotionReveal } from './modes/MotionReveal'
+import { FluidSimulation } from './modes/FluidSimulation'
 import { SilhouetteFX } from './modes/SilhouetteFX'
 import { CosmicNebula } from './modes/CosmicNebula'
 import { NeonGrid } from './modes/NeonGrid'
 import { ElectricPlasma } from './modes/ElectricPlasma'
 import { LavaEmbers } from './modes/LavaEmbers'
-import { KinematicColliders } from './KinematicColliders'
 import { Environment } from '@react-three/drei'
 
 export function Scene() {
@@ -35,39 +30,24 @@ export function Scene() {
         <Environment preset="city" />
 
         <Suspense fallback={null}>
-          {currentMode === 'Asteroids' && (
-            <Physics gravity={[0, 0, 0]}>
-              <KinematicColliders />
-              <Asteroids />
-            </Physics>
+          {currentMode === 'ParticleTrail' && (
+            <ParticleTrail />
           )}
 
-          {currentMode === 'FluidSimulation' && (
-            <FluidSimulation />
+          {currentMode === 'WaterRipples' && (
+            <WaterRipples />
           )}
 
-          {currentMode === 'KoiPond' && (
-            <KoiPond />
+          {currentMode === 'Scatter' && (
+            <Scatter />
           )}
 
           {currentMode === 'MotionReveal' && (
             <MotionReveal />
           )}
 
-          {currentMode === 'ScatterLeaves' && (
-            <ScatterLeaves />
-          )}
-
-          {currentMode === 'Sparkles' && (
-            <Sparkles />
-          )}
-
-          {currentMode === 'ParticleTrail' && (
-            <ParticleTrail />
-          )}
-
-          {currentMode === 'SandyShore' && (
-            <SandyShore />
+          {currentMode === 'FluidSimulation' && (
+            <FluidSimulation />
           )}
 
           {currentMode === 'SilhouetteFX' && (

@@ -134,8 +134,24 @@ export function CosmicNebula() {
   const tempMatrix = useMemo(() => new THREE.Matrix4(), [])
   const tempColor = useMemo(() => new THREE.Color(), [])
 
+  // Exponentially smoothed screen coordinates for jitter-free shader rendering
+  const smoothedScreen = useRef({
+    lFoot: new THREE.Vector2(-10, -10),
+    rFoot: new THREE.Vector2(-10, -10),
+    lHand: new THREE.Vector2(-10, -10),
+    rHand: new THREE.Vector2(-10, -10),
+  })
+
+  // Exponentially smoothed world coordinates for gravity attractors
+  const smoothedWorld = useRef({
+    lFoot: new THREE.Vector3(-100, -100, 0),
+    rFoot: new THREE.Vector3(-100, -100, 0),
+    lHand: new THREE.Vector3(-100, -100, 0),
+    rHand: new THREE.Vector3(-100, -100, 0),
+  })
+
   const toWorld = (pt: any) => pt ? new THREE.Vector3((pt.x - 0.5) * 20, -(pt.y - 0.5) * 10, 0) : null
-  const toScreen = (pt: any) => pt ? new THREE.Vector2(pt.x, 1.0 - pt.y) : new THREE.Vector2(-10, -10)
+  const toScreen = (pt: any) => pt ? new THREE.Vector2(pt.x, 1.0 - pt.y) : null
 
   const uniforms = useMemo(
     () => ({
@@ -153,6 +169,28 @@ export function CosmicNebula() {
   useFrame((state, delta) => {
     const data = trackingDataRef.current
     const isTracking = data.is_tracking
+    const dt = Math.min(delta, 0.05)
+    const smoothFactor = 1.0 - Math.exp(-22.0 * dt)
+
+    // Smooth screen uniforms
+    const updateSmoothScreen = (target: THREE.Vector2 | null, current: THREE.Vector2) => {
+      if (target) {
+        if (current.x < -5) current.copy(target)
+        else current.lerp(target, smoothFactor)
+      } else {
+        current.set(-10, -10)
+      }
+    }
+
+    const scrLF = toScreen(data.left_foot)
+    const scrRF = toScreen(data.right_foot)
+    const scrLH = toScreen(data.left_hand)
+    const scrRH = toScreen(data.right_hand)
+
+    updateSmoothScreen(scrLF, smoothedScreen.current.lFoot)
+    updateSmoothScreen(scrRF, smoothedScreen.current.rFoot)
+    updateSmoothScreen(scrLH, smoothedScreen.current.lHand)
+    updateSmoothScreen(scrRH, smoothedScreen.current.rHand)
 
     // Update nebula shader uniforms
     if (nebulaMatRef.current) {
@@ -161,48 +199,58 @@ export function CosmicNebula() {
       nebulaMatRef.current.uniforms.u_tracking.value = isTracking ? 1.0 : 0.0
 
       if (isTracking) {
-        nebulaMatRef.current.uniforms.u_lFoot.value = toScreen(data.left_foot)
-        nebulaMatRef.current.uniforms.u_rFoot.value = toScreen(data.right_foot)
-        nebulaMatRef.current.uniforms.u_lHand.value = toScreen(data.left_hand)
-        nebulaMatRef.current.uniforms.u_rHand.value = toScreen(data.right_hand)
+        nebulaMatRef.current.uniforms.u_lFoot.value.copy(smoothedScreen.current.lFoot)
+        nebulaMatRef.current.uniforms.u_rFoot.value.copy(smoothedScreen.current.rFoot)
+        nebulaMatRef.current.uniforms.u_lHand.value.copy(smoothedScreen.current.lHand)
+        nebulaMatRef.current.uniforms.u_rHand.value.copy(smoothedScreen.current.rHand)
       }
     }
 
     const attractors: THREE.Vector3[] = []
-    const lFWorld = toWorld(data.left_foot)
-    const rFWorld = toWorld(data.right_foot)
-    const lHWorld = toWorld(data.left_hand)
-    const rHWorld = toWorld(data.right_hand)
-
-    if (isTracking) {
-      if (lFWorld) attractors.push(lFWorld)
-      if (rFWorld) attractors.push(rFWorld)
-      if (lHWorld) attractors.push(lHWorld)
-      if (rHWorld) attractors.push(rHWorld)
-    }
-
-    // Step burst check for supernovas
-    const checkBurst = (curr: THREE.Vector3 | null, prev: THREE.Vector3 | null, key: 'L' | 'R') => {
-      if (curr) {
-        if (!prev || curr.distanceTo(prev) > 0.5) {
-          ringsRef.current.push({
-            pos: curr.clone().setZ(0.05),
-            radius: 0.2,
-            opacity: 1.0,
-            color: new THREE.Color().setHSL((state.clock.elapsedTime * 0.2) % 1.0, 1.0, 0.6)
-          })
-          lastFootPos.current[key] = curr.clone()
-        }
+    const updateSmoothWorld = (target: THREE.Vector3 | null, current: THREE.Vector3) => {
+      if (target) {
+        if (current.z < -50) current.copy(target)
+        else current.lerp(target, smoothFactor)
+        attractors.push(current)
+      } else {
+        current.set(0, 0, -100)
       }
     }
-    checkBurst(lFWorld, lastFootPos.current.L, 'L')
-    checkBurst(rFWorld, lastFootPos.current.R, 'R')
+
+    if (isTracking) {
+      updateSmoothWorld(toWorld(data.left_foot), smoothedWorld.current.lFoot)
+      updateSmoothWorld(toWorld(data.right_foot), smoothedWorld.current.rFoot)
+      updateSmoothWorld(toWorld(data.left_hand), smoothedWorld.current.lHand)
+      updateSmoothWorld(toWorld(data.right_hand), smoothedWorld.current.rHand)
+    }
+
+    // Step burst check for supernovas with velocity hysteresis
+    const checkBurst = (curr: THREE.Vector3, isLive: boolean, prev: THREE.Vector3 | null, key: 'L' | 'R') => {
+      if (isLive) {
+        if (prev && prev.z > -50) {
+          const speed = curr.distanceTo(prev) / Math.max(dt, 0.001)
+          if (speed > 4.5) {
+            ringsRef.current.push({
+              pos: curr.clone().setZ(0.05),
+              radius: 0.2,
+              opacity: 1.0,
+              color: new THREE.Color().setHSL((state.clock.elapsedTime * 0.2) % 1.0, 1.0, 0.6)
+            })
+          }
+        }
+        lastFootPos.current[key] = curr.clone()
+      } else {
+        lastFootPos.current[key] = null
+      }
+    }
+    checkBurst(smoothedWorld.current.lFoot, !!data.left_foot, lastFootPos.current.L, 'L')
+    checkBurst(smoothedWorld.current.rFoot, !!data.right_foot, lastFootPos.current.R, 'R')
 
     // Animate rings
     for (let i = ringsRef.current.length - 1; i >= 0; i--) {
       const ring = ringsRef.current[i]
-      ring.radius += delta * 3.5
-      ring.opacity -= delta * 1.2
+      ring.radius += dt * 3.5
+      ring.opacity -= dt * 1.2
       if (ring.opacity <= 0) {
         ringsRef.current.splice(i, 1)
       }
