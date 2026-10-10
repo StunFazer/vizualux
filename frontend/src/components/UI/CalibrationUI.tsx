@@ -4,21 +4,59 @@ import { useTracker } from '../../hooks/useTracker'
 import { Homography } from '../../utils/homography'
 import { CameraSelector } from './CameraSelector'
 
-const HANDLE_SIZE = 24
+const HANDLE_SIZE = 26
 
 /**
- * Computes the weighted centroid of the difference image between current frame and dark baseline.
- * Ported from the Interactive Projection Software architecture.
+ * Computes the weighted centroid of the bright projected target spot
+ * using adaptive local-contrast normalization to reject camera auto-exposure shifts.
  */
 function calculateDifferenceCentroid(
   currPixels: Uint8ClampedArray,
   darkRefPixels: Uint8ClampedArray,
   w: number,
   h: number,
-  stepSize = 2,
-  threshold = 25
+  stepSize = 2
 ): { x: number; y: number } | null {
   if (!currPixels || !darkRefPixels) return null
+
+  // 1. Calculate global luminance difference to cancel camera auto-exposure drift
+  let sumDiff = 0
+  let sampleCount = 0
+
+  for (let y = 0; y < h; y += stepSize * 2) {
+    for (let x = 0; x < w; x += stepSize * 2) {
+      const idx = (y * w + x) * 4
+      const currLuma = 0.299 * currPixels[idx] + 0.587 * currPixels[idx + 1] + 0.114 * currPixels[idx + 2]
+      const darkLuma = 0.299 * darkRefPixels[idx] + 0.587 * darkRefPixels[idx + 1] + 0.114 * darkRefPixels[idx + 2]
+      sumDiff += (currLuma - darkLuma)
+      sampleCount++
+    }
+  }
+
+  const globalExposureShift = sampleCount > 0 ? (sumDiff / sampleCount) : 0
+
+  // 2. Compute local positive difference and find peak illumination
+  let maxLocalDiff = 0
+
+  for (let y = 0; y < h; y += stepSize) {
+    for (let x = 0; x < w; x += stepSize) {
+      const idx = (y * w + x) * 4
+      const currLuma = 0.299 * currPixels[idx] + 0.587 * currPixels[idx + 1] + 0.114 * currPixels[idx + 2]
+      const darkLuma = 0.299 * darkRefPixels[idx] + 0.587 * darkRefPixels[idx + 1] + 0.114 * darkRefPixels[idx + 2]
+      const localDiff = (currLuma - darkLuma) - globalExposureShift
+      if (localDiff > maxLocalDiff) {
+        maxLocalDiff = localDiff
+      }
+    }
+  }
+
+  // Reject if no distinct bright projection target spot was observed
+  if (maxLocalDiff < 22) {
+    return null
+  }
+
+  // 3. Cluster around the local peak (top 35% of peak intensity)
+  const peakThreshold = maxLocalDiff * 0.65
   let sumWeight = 0
   let sumX = 0
   let sumY = 0
@@ -26,13 +64,12 @@ function calculateDifferenceCentroid(
   for (let y = 0; y < h; y += stepSize) {
     for (let x = 0; x < w; x += stepSize) {
       const idx = (y * w + x) * 4
-      const rDiff = Math.abs(currPixels[idx] - darkRefPixels[idx])
-      const gDiff = Math.abs(currPixels[idx + 1] - darkRefPixels[idx + 1])
-      const bDiff = Math.abs(currPixels[idx + 2] - darkRefPixels[idx + 2])
-      const diff = 0.299 * rDiff + 0.587 * gDiff + 0.114 * bDiff
+      const currLuma = 0.299 * currPixels[idx] + 0.587 * currPixels[idx + 1] + 0.114 * currPixels[idx + 2]
+      const darkLuma = 0.299 * darkRefPixels[idx] + 0.587 * darkRefPixels[idx + 1] + 0.114 * darkRefPixels[idx + 2]
+      const localDiff = (currLuma - darkLuma) - globalExposureShift
 
-      if (diff > threshold) {
-        const weight = diff * diff
+      if (localDiff > peakThreshold) {
+        const weight = Math.pow(localDiff - peakThreshold, 2)
         sumWeight += weight
         sumX += x * weight
         sumY += y * weight
@@ -40,8 +77,7 @@ function calculateDifferenceCentroid(
     }
   }
 
-  // Minimum weight threshold to reject noise
-  if (sumWeight < 800) {
+  if (sumWeight < 40) {
     return null
   }
 
@@ -65,12 +101,15 @@ export function CalibrationUI() {
   } = useStore()
 
   const [draggingIdx, setDraggingIdx] = useState<number | null>(null)
+  const [selectedCornerIdx, setSelectedCornerIdx] = useState<number>(0)
+  const [nudgeStepPx, setNudgeStepPx] = useState<number>(1)
   const containerRef = useRef<HTMLDivElement>(null)
   const trackerRef = useTracker()
   const imgRef = useRef<HTMLImageElement>(null)
+  const loupeCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const [hasStream, setHasStream] = useState(false)
 
-  // Structured Light Auto-Calibration State
+  // Auto-Calibration State
   const [isAutoCalibrating, setIsAutoCalibrating] = useState(false)
   const [autoStatus, setAutoStatus] = useState<string>('')
   const [autoProgress, setAutoProgress] = useState<number>(0)
@@ -139,7 +178,33 @@ export function CalibrationUI() {
     }
   }, [])
 
-  // Structured Light 5-step sequence
+  // Update magnifying loupe preview
+  const updateLoupe = useCallback((pt: Point2D) => {
+    if (!loupeCanvasRef.current || !imgRef.current) return
+    const ctx = loupeCanvasRef.current.getContext('2d')
+    if (!ctx) return
+
+    const srcW = imgRef.current.naturalWidth || 640
+    const srcH = imgRef.current.naturalHeight || 360
+    const pxX = pt.x * srcW
+    const pxY = pt.y * srcH
+
+    const zoom = 2.6
+    const sampleW = 140 / zoom
+    const sampleH = 140 / zoom
+
+    ctx.clearRect(0, 0, 140, 140)
+    ctx.imageSmoothingEnabled = false
+    try {
+      ctx.drawImage(
+        imgRef.current,
+        pxX - sampleW / 2, pxY - sampleH / 2, sampleW, sampleH,
+        0, 0, 140, 140
+      )
+    } catch {}
+  }, [])
+
+  // Structured Light 5-step sequence with camera auto-exposure stabilization
   const startStructuredLightCalibration = async () => {
     if (!hasStream) {
       setAutoError('Camera feed is not ready. Please wait for the video stream to connect.')
@@ -160,7 +225,7 @@ export function CalibrationUI() {
       setAutoStatus('Step 0/5: Capturing room ambient baseline...')
       setCalibrationStep(0)
       setAutoProgress(10)
-      await sleep(1300)
+      await sleep(1500) // allow camera exposure to settle
 
       if (cancelRef.current) return
 
@@ -179,25 +244,29 @@ export function CalibrationUI() {
         setAutoStatus(`Step ${s}/5: Calibrating ${stepNames[s - 1]} corner...`)
         setCalibrationStep(s)
         setAutoProgress(15 + s * 18)
-        await sleep(1300)
+        await sleep(1500) // camera AE settling delay
 
         if (cancelRef.current) return
 
-        const currPixels = getCameraPixels()
+        // Take two samples to ensure stability
+        const sample1 = getCameraPixels()
+        await sleep(200)
+        const sample2 = getCameraPixels()
+        const currPixels = sample2 || sample1
+
         if (!currPixels) {
           throw new Error(`Failed to capture camera frame during ${stepNames[s - 1]} flash.`)
         }
 
-        // Calculate difference centroid
-        let centroid = calculateDifferenceCentroid(currPixels, darkRefPixels, 640, 360, 2, 25)
-        // Fallback with lower threshold if room is dim
-        if (!centroid) {
-          centroid = calculateDifferenceCentroid(currPixels, darkRefPixels, 640, 360, 2, 15)
+        // Calculate adaptive difference centroid
+        let centroid = calculateDifferenceCentroid(currPixels, darkRefPixels, 640, 360, 2)
+        if (!centroid && sample1) {
+          centroid = calculateDifferenceCentroid(sample1, darkRefPixels, 640, 360, 2)
         }
 
         if (!centroid) {
           throw new Error(
-            `Target detection failed at ${stepNames[s - 1]} corner. Ensure the projector is visible to the camera without physical obstruction.`
+            `Target detection failed at ${stepNames[s - 1]} corner. Ensure the projector target is within camera view.`
           )
         }
 
@@ -213,7 +282,6 @@ export function CalibrationUI() {
 
       if (cancelRef.current) return
 
-      // Normalized coordinates where the projector displayed the 4 target points
       const targetPos: Point2D[] = [
         { x: 0.05, y: 0.05 }, // Top-Left
         { x: 0.95, y: 0.05 }, // Top-Right
@@ -227,7 +295,6 @@ export function CalibrationUI() {
         throw new Error('Singular matrix encountered during homography calculation. Please re-run.')
       }
 
-      // Extrapolate to projector screen bounds (0,0), (1,0), (1,1), (0,1)
       const c0 = H.transform(0, 0)
       const c1 = H.transform(1, 0)
       const c2 = H.transform(1, 1)
@@ -244,7 +311,6 @@ export function CalibrationUI() {
         { x: Math.max(0, Math.min(1, c3.x)), y: Math.max(0, Math.min(1, c3.y)) }
       ]
 
-      // Apply to store and localStorage
       setCalibrationCorners(newCorners)
       if (emitMessage) {
         emitMessage({ type: 'set_calibration_corners', corners: newCorners })
@@ -265,6 +331,58 @@ export function CalibrationUI() {
     }
   }
 
+  // ArUco Marker One-Click Detection Sequence
+  const startArucoCalibration = async () => {
+    if (!hasStream) {
+      setAutoError('Camera feed is not ready. Please wait for camera to connect.')
+      return
+    }
+
+    cancelRef.current = false
+    setIsAutoCalibrating(true)
+    setAutoError(null)
+    setAutoSuccess(false)
+    setAutoStatus('Displaying ArUco markers on projector... Detecting markers 0, 1, 2, 3...')
+    setAutoProgress(25)
+    setCalibrationStep(10) // Show ArUco markers on projector
+
+    const emit = useStore.getState().emitMessage
+    if (emit) {
+      emit({ type: 'start_auto_calibrate' })
+    }
+
+    const startTime = Date.now()
+    const checkInterval = setInterval(() => {
+      if (cancelRef.current) {
+        clearInterval(checkInterval)
+        return
+      }
+
+      const result = trackerRef.current.auto_calibrate_result
+      if (result && Array.isArray(result) && result.length >= 4) {
+        clearInterval(checkInterval)
+        setCalibrationCorners(result)
+        if (emit) {
+          emit({ type: 'set_calibration_corners', corners: result })
+        }
+        setLockedPoints(result)
+        setAutoProgress(100)
+        setAutoStatus('ArUco auto-calibration successful! 4 corners locked.')
+        setAutoSuccess(true)
+        setIsAutoCalibrating(false)
+        setCalibrationStep(-1)
+        return
+      }
+
+      if (Date.now() - startTime > 12000) {
+        clearInterval(checkInterval)
+        setIsAutoCalibrating(false)
+        setCalibrationStep(-1)
+        setAutoError('ArUco markers not detected by camera within 12s. Check camera angle or use Optical Auto-Calibration.')
+      }
+    }, 250)
+  }
+
   const cancelCalibration = () => {
     cancelRef.current = true
     setIsAutoCalibrating(false)
@@ -277,7 +395,9 @@ export function CalibrationUI() {
   // Pointer drag event handlers for manual corner fine-tuning
   const handlePointerDown = (idx: number) => (e: React.PointerEvent) => {
     setDraggingIdx(idx)
+    setSelectedCornerIdx(idx)
     ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+    updateLoupe(calibrationCorners[idx])
   }
 
   const handlePointerMove = (e: React.PointerEvent) => {
@@ -296,12 +416,31 @@ export function CalibrationUI() {
     if (emitMessage) {
       emitMessage({ type: 'set_calibration_corners', corners: newCorners })
     }
+
+    updateLoupe({ x, y })
   }
 
   const handlePointerUp = (e: React.PointerEvent) => {
     setDraggingIdx(null)
     ;(e.target as HTMLElement).releasePointerCapture(e.pointerId)
   }
+
+  // Handle precision nudge using D-pad buttons
+  const nudgeCorner = (dxPx: number, dyPx: number) => {
+    const newCorners = [...calibrationCorners]
+    const cur = newCorners[selectedCornerIdx]
+    const nx = Math.max(0, Math.min(1, cur.x + dxPx / 640))
+    const ny = Math.max(0, Math.min(1, cur.y + dyPx / 360))
+    newCorners[selectedCornerIdx] = { x: nx, y: ny }
+    setCalibrationCorners(newCorners)
+    if (emitMessage) {
+      emitMessage({ type: 'set_calibration_corners', corners: newCorners })
+    }
+    updateLoupe({ x: nx, y: ny })
+  }
+
+  const cornerLabels = ['TL 1 (Red)', 'TR 2 (Blue)', 'BR 3 (Green)', 'BL 4 (Yellow)']
+  const cornerColors = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b']
 
   return (
     <div 
@@ -320,50 +459,66 @@ export function CalibrationUI() {
       {/* Top Header Bar */}
       <div style={{ 
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-        padding: '20px 30px', background: 'rgba(15, 17, 23, 0.95)', borderBottom: '1px solid #232733',
+        padding: '16px 24px', background: 'rgba(15, 17, 23, 0.95)', borderBottom: '1px solid #232733',
         boxShadow: '0 4px 20px rgba(0,0,0,0.5)', zIndex: 30
       }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: '1.4rem', color: '#00f5ff', letterSpacing: '0.05em' }}>
+          <h1 style={{ margin: 0, fontSize: '1.3rem', color: '#00f5ff', letterSpacing: '0.05em' }}>
             Structured Light Calibration
           </h1>
-          <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: '#94a3b8' }}>
-            Automatic 5-step optical difference mapping with manual corner override
+          <p style={{ margin: '3px 0 0 0', fontSize: '0.8rem', color: '#94a3b8' }}>
+            Color-matched floor targets with precision magnifying loupe & auto-detection
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           {/* Camera Selection Dropdown */}
           <div style={{ 
             display: 'flex', alignItems: 'center', gap: '8px', 
-            background: 'rgba(255,255,255,0.06)', padding: '6px 12px', 
+            background: 'rgba(255,255,255,0.06)', padding: '5px 10px', 
             borderRadius: '8px', border: '1px solid rgba(255,255,255,0.12)' 
           }}>
             <CameraSelector compact={true} />
           </div>
 
           {!isAutoCalibrating ? (
-            <button 
-              onClick={startStructuredLightCalibration}
-              style={{ 
-                padding: '12px 24px', 
-                background: 'linear-gradient(135deg, #06b6d4, #3b82f6)', 
-                color: 'white', border: 'none', borderRadius: '8px', 
-                cursor: 'pointer', fontSize: '1rem', fontWeight: 600,
-                boxShadow: '0 4px 15px rgba(6, 182, 212, 0.4)',
-                transition: 'transform 0.15s ease'
-              }}
-            >
-              Start Auto-Calibration
-            </button>
+            <>
+              <button 
+                onClick={startStructuredLightCalibration}
+                title="Optical Flash Auto-Calibration"
+                style={{ 
+                  padding: '10px 18px', 
+                  background: 'linear-gradient(135deg, #06b6d4, #3b82f6)', 
+                  color: 'white', border: 'none', borderRadius: '8px', 
+                  cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600,
+                  boxShadow: '0 4px 15px rgba(6, 182, 212, 0.4)'
+                }}
+              >
+                Optical Auto-Calibrate
+              </button>
+
+              <button 
+                onClick={startArucoCalibration}
+                title="Instant ArUco Marker Auto-Calibration"
+                style={{ 
+                  padding: '10px 18px', 
+                  background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', 
+                  color: 'white', border: 'none', borderRadius: '8px', 
+                  cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600,
+                  boxShadow: '0 4px 15px rgba(139, 92, 246, 0.4)'
+                }}
+              >
+                ArUco Auto-Detect
+              </button>
+            </>
           ) : (
             <button 
               onClick={cancelCalibration}
               style={{ 
-                padding: '12px 24px', 
+                padding: '10px 20px', 
                 background: '#ef4444', 
                 color: 'white', border: 'none', borderRadius: '8px', 
-                cursor: 'pointer', fontSize: '1rem', fontWeight: 600
+                cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600
               }}
             >
               Cancel
@@ -380,10 +535,10 @@ export function CalibrationUI() {
               }
             }}
             style={{ 
-              padding: '12px 24px', 
+              padding: '10px 20px', 
               background: '#1e293b', color: '#e2e8f0', 
               border: '1px solid #334155', borderRadius: '8px', 
-              cursor: 'pointer', fontSize: '1rem', fontWeight: 600
+              cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600
             }}
           >
             Save & Exit
@@ -392,19 +547,19 @@ export function CalibrationUI() {
       </div>
 
       {/* Main Body Area */}
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', position: 'relative' }}>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', position: 'relative', gap: '20px' }}>
         
         {/* Camera Feed Card */}
         <div style={{
-          background: '#111318', border: '1px solid #232733', padding: '20px', borderRadius: '14px', 
+          background: '#111318', border: '1px solid #232733', padding: '16px', borderRadius: '14px', 
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', maxWidth: '720px', width: '100%'
+          display: 'flex', flexDirection: 'column', alignItems: 'center', maxWidth: '680px', width: '100%'
         }}>
-          <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <span style={{ color: '#e2e8f0', fontWeight: 600, fontSize: '0.95rem' }}>
-              Camera Tracking View <span style={{ color: '#64748b', fontSize: '0.85rem', fontWeight: 400 }}>({[...deviceCameras, ...hostCameras].find(c => c.id === activeCameraId)?.name || (activeCamera === -1 ? '📱 Phone / Device Camera' : `Camera ${activeCamera}`)})</span>
+          <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <span style={{ color: '#e2e8f0', fontWeight: 600, fontSize: '0.9rem' }}>
+              Camera Tracking View <span style={{ color: '#64748b', fontSize: '0.8rem', fontWeight: 400 }}>({[...deviceCameras, ...hostCameras].find(c => c.id === activeCameraId)?.name || (activeCamera === -1 ? '📱 Phone / Device Camera' : `Camera ${activeCamera}`)})</span>
             </span>
-            <span style={{ color: hasStream ? '#10b981' : '#f43f5e', fontSize: '0.85rem', fontWeight: 500 }}>
+            <span style={{ color: hasStream ? '#10b981' : '#f43f5e', fontSize: '0.8rem', fontWeight: 500 }}>
               {hasStream ? 'Stream Active (640x360)' : 'Waiting for camera feed...'}
             </span>
           </div>
@@ -455,65 +610,98 @@ export function CalibrationUI() {
                 }}
               >
                 <div style={{
-                  width: 28, height: 28, borderRadius: '50%',
-                  border: '2px solid #00ffaa',
-                  boxShadow: '0 0 10px #00ffaa',
+                  width: 32, height: 32, borderRadius: '50%',
+                  border: `2px solid ${cornerColors[idx % 4]}`,
+                  boxShadow: `0 0 12px ${cornerColors[idx % 4]}`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: 'rgba(0, 255, 170, 0.2)'
+                  background: 'rgba(0, 0, 0, 0.4)'
                 }}>
                   <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff' }} />
                 </div>
               </div>
             ))}
 
-            {/* Manual Drag Handles */}
+            {/* Manual Drag Handles (Color-coded to match projector floor targets) */}
             {calibrationCorners.map((corner, idx) => {
-              const labels = ['Top-Left', 'Top-Right', 'Bottom-Right', 'Bottom-Left']
-              const colors = ['#ef4444', '#3b82f6', '#22c55e', '#eab308']
+              const isSelected = selectedCornerIdx === idx
+              const isDragging = draggingIdx === idx
               return (
                 <div 
                   key={idx}
                   onPointerDown={handlePointerDown(idx)}
+                  onClick={() => { setSelectedCornerIdx(idx); updateLoupe(corner); }}
                   style={{
                     position: 'absolute',
                     left: corner.x * 640,
                     top: corner.y * 360,
                     width: HANDLE_SIZE, height: HANDLE_SIZE,
-                    background: colors[idx],
+                    background: cornerColors[idx],
                     borderRadius: '50%',
                     transform: 'translate(-50%, -50%)',
-                    cursor: draggingIdx === idx ? 'grabbing' : 'grab',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.9)',
-                    border: draggingIdx === idx ? '3px solid white' : '2px solid white',
-                    zIndex: 20
+                    cursor: isDragging ? 'grabbing' : 'grab',
+                    boxShadow: isSelected ? `0 0 16px ${cornerColors[idx]}, 0 4px 12px rgba(0,0,0,0.9)` : '0 4px 12px rgba(0,0,0,0.9)',
+                    border: isSelected ? '3px solid white' : '2px solid white',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    zIndex: isDragging ? 35 : (isSelected ? 30 : 20)
                   }}
                 >
+                  <span style={{ color: '#fff', fontSize: '0.7rem', fontWeight: 800 }}>{idx + 1}</span>
                   <div style={{ 
-                    position: 'absolute', top: -22, left: '50%', transform: 'translateX(-50%)', 
+                    position: 'absolute', top: -24, left: '50%', transform: 'translateX(-50%)', 
                     color: '#ffffff', textShadow: '0 1px 3px #000', whiteSpace: 'nowrap', 
-                    pointerEvents: 'none', fontWeight: 600, fontSize: '0.75rem',
-                    background: 'rgba(0,0,0,0.7)', padding: '2px 6px', borderRadius: '4px'
+                    pointerEvents: 'none', fontWeight: 700, fontSize: '0.7rem',
+                    background: 'rgba(0,0,0,0.8)', padding: '2px 6px', borderRadius: '4px',
+                    border: `1px solid ${cornerColors[idx]}`
                   }}>
-                    {labels[idx]}
+                    {cornerLabels[idx]}
                   </div>
                 </div>
               )
             })}
+
+            {/* Floating Magnifying Loupe (Active while dragging any handle) */}
+            {draggingIdx !== null && (
+              <div 
+                style={{
+                  position: 'absolute',
+                  left: Math.max(75, Math.min(565, calibrationCorners[draggingIdx].x * 640)),
+                  top: Math.max(75, Math.min(285, calibrationCorners[draggingIdx].y * 360 - 90)),
+                  transform: 'translate(-50%, -50%)',
+                  width: 140, height: 140,
+                  borderRadius: '50%',
+                  border: `3px solid ${cornerColors[draggingIdx]}`,
+                  boxShadow: '0 10px 30px rgba(0,0,0,0.95), 0 0 20px rgba(0,245,255,0.4)',
+                  overflow: 'hidden',
+                  pointerEvents: 'none',
+                  zIndex: 50,
+                  backgroundColor: '#000'
+                }}
+              >
+                <canvas ref={loupeCanvasRef} width={140} height={140} style={{ width: '100%', height: '100%' }} />
+                {/* Center Crosshair Reticle */}
+                <div style={{ position: 'absolute', top: '50%', left: 0, width: '100%', height: 1, background: 'rgba(255,255,255,0.85)' }} />
+                <div style={{ position: 'absolute', top: 0, left: '50%', width: 1, height: '100%', background: 'rgba(255,255,255,0.85)' }} />
+                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 12, height: 12, borderRadius: '50%', border: '2px solid #ef4444' }} />
+                <div style={{ position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.85)', color: '#00f5ff', fontSize: '0.65rem', padding: '1px 6px', borderRadius: '3px', fontWeight: 700 }}>
+                  2.6x Precision Loupe
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Status & Progress Bar Card */}
-          <div style={{ width: '100%', marginTop: '16px' }}>
+          {/* Status & Progress Bar */}
+          <div style={{ width: '100%', marginTop: '14px' }}>
             {isAutoCalibrating && (
-              <div style={{ marginBottom: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span style={{ color: '#00f5ff', fontSize: '0.85rem', fontWeight: 600 }}>{autoStatus}</span>
-                  <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>{autoProgress}%</span>
+              <div style={{ marginBottom: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                  <span style={{ color: '#00f5ff', fontSize: '0.8rem', fontWeight: 600 }}>{autoStatus}</span>
+                  <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>{autoProgress}%</span>
                 </div>
-                <div style={{ width: '100%', height: '8px', background: '#1e293b', borderRadius: '4px', overflow: 'hidden' }}>
+                <div style={{ width: '100%', height: '6px', background: '#1e293b', borderRadius: '4px', overflow: 'hidden' }}>
                   <div 
                     style={{ 
                       width: `${autoProgress}%`, height: '100%', 
-                      background: 'linear-gradient(90deg, #00f5ff, #3b82f6)',
+                      background: 'linear-gradient(90deg, #00f5ff, #8b5cf6)',
                       transition: 'width 0.3s ease' 
                     }} 
                   />
@@ -523,29 +711,138 @@ export function CalibrationUI() {
 
             {autoSuccess && (
               <div style={{ 
-                padding: '10px 14px', background: 'rgba(16, 185, 129, 0.15)', 
+                padding: '8px 12px', background: 'rgba(16, 185, 129, 0.15)', 
                 border: '1px solid #10b981', borderRadius: '6px', 
-                color: '#34d399', fontSize: '0.85rem', fontWeight: 500, marginBottom: '8px'
+                color: '#34d399', fontSize: '0.8rem', fontWeight: 600, marginBottom: '6px'
               }}>
-                Auto-calibration successful!
+                Auto-calibration successfully solved and saved!
               </div>
             )}
 
             {autoError && (
               <div style={{ 
-                padding: '10px 14px', background: 'rgba(239, 68, 68, 0.15)', 
+                padding: '8px 12px', background: 'rgba(239, 68, 68, 0.15)', 
                 border: '1px solid #ef4444', borderRadius: '6px', 
-                color: '#f87171', fontSize: '0.85rem', marginBottom: '8px'
+                color: '#f87171', fontSize: '0.8rem', marginBottom: '6px'
               }}>
                 {autoError}
               </div>
             )}
-
-            <div style={{ color: '#64748b', fontSize: '0.8rem', lineHeight: '1.4', marginTop: '6px' }}>
-              Tip: Click <strong>Start Auto-Calibration</strong>. The system will flash 4 structured light points on the projector floor and lock on automatically. You can also drag the colored corner handles directly to fine-tune the calibration polygon.
-            </div>
           </div>
         </div>
+
+        {/* Precision Nudge Keypad Card */}
+        <div style={{
+          background: '#111318', border: '1px solid #232733', padding: '18px', borderRadius: '14px', 
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)',
+          display: 'flex', flexDirection: 'column', gap: '14px', width: '280px'
+        }}>
+          <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#e2e8f0', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Precision Nudge
+          </div>
+
+          {/* Corner Selector Tabs */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+            {cornerLabels.map((lbl, idx) => (
+              <button
+                key={idx}
+                onClick={() => { setSelectedCornerIdx(idx); updateLoupe(calibrationCorners[idx]); }}
+                style={{
+                  padding: '7px 4px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  backgroundColor: selectedCornerIdx === idx ? cornerColors[idx] : 'rgba(255,255,255,0.06)',
+                  border: selectedCornerIdx === idx ? '2px solid white' : '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '6px',
+                  color: 'white',
+                  cursor: 'pointer',
+                  textAlign: 'center'
+                }}
+              >
+                {lbl}
+              </button>
+            ))}
+          </div>
+
+          {/* Coordinate info */}
+          <div style={{ background: '#0a0c10', padding: '8px', borderRadius: '6px', border: '1px solid #1e293b', fontSize: '0.75rem', color: '#94a3b8' }}>
+            <div>Selected: <strong style={{ color: cornerColors[selectedCornerIdx] }}>{cornerLabels[selectedCornerIdx]}</strong></div>
+            <div style={{ marginTop: '2px', fontFamily: 'monospace' }}>
+              X: {(calibrationCorners[selectedCornerIdx].x * 640).toFixed(0)}px ({(calibrationCorners[selectedCornerIdx].x).toFixed(3)})
+            </div>
+            <div style={{ fontFamily: 'monospace' }}>
+              Y: {(calibrationCorners[selectedCornerIdx].y * 360).toFixed(0)}px ({(calibrationCorners[selectedCornerIdx].y).toFixed(3)})
+            </div>
+          </div>
+
+          {/* Step Size Selector */}
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Step:</span>
+            <button
+              onClick={() => setNudgeStepPx(1)}
+              style={{
+                flex: 1, padding: '4px', fontSize: '0.75rem',
+                backgroundColor: nudgeStepPx === 1 ? '#06b6d4' : 'rgba(255,255,255,0.06)',
+                border: 'none', borderRadius: '4px', color: 'white', cursor: 'pointer'
+              }}
+            >
+              1px (Fine)
+            </button>
+            <button
+              onClick={() => setNudgeStepPx(5)}
+              style={{
+                flex: 1, padding: '4px', fontSize: '0.75rem',
+                backgroundColor: nudgeStepPx === 5 ? '#06b6d4' : 'rgba(255,255,255,0.06)',
+                border: 'none', borderRadius: '4px', color: 'white', cursor: 'pointer'
+              }}
+            >
+              5px (Coarse)
+            </button>
+          </div>
+
+          {/* D-Pad Buttons */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+            <button
+              onClick={() => nudgeCorner(0, -nudgeStepPx)}
+              style={{
+                width: '48px', height: '40px', background: '#1e293b', border: '1px solid #334155',
+                borderRadius: '6px', color: '#e2e8f0', fontSize: '1rem', cursor: 'pointer', fontWeight: 'bold'
+              }}
+            >
+              ▲
+            </button>
+            <div style={{ display: 'flex', gap: '24px' }}>
+              <button
+                onClick={() => nudgeCorner(-nudgeStepPx, 0)}
+                style={{
+                  width: '48px', height: '40px', background: '#1e293b', border: '1px solid #334155',
+                  borderRadius: '6px', color: '#e2e8f0', fontSize: '1rem', cursor: 'pointer', fontWeight: 'bold'
+                }}
+              >
+                ◀
+              </button>
+              <button
+                onClick={() => nudgeCorner(nudgeStepPx, 0)}
+                style={{
+                  width: '48px', height: '40px', background: '#1e293b', border: '1px solid #334155',
+                  borderRadius: '6px', color: '#e2e8f0', fontSize: '1rem', cursor: 'pointer', fontWeight: 'bold'
+                }}
+              >
+                ▶
+              </button>
+            </div>
+            <button
+              onClick={() => nudgeCorner(0, nudgeStepPx)}
+              style={{
+                width: '48px', height: '40px', background: '#1e293b', border: '1px solid #334155',
+                borderRadius: '6px', color: '#e2e8f0', fontSize: '1rem', cursor: 'pointer', fontWeight: 'bold'
+              }}
+            >
+              ▼
+            </button>
+          </div>
+        </div>
+
       </div>
     </div>
   )

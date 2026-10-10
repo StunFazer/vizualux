@@ -172,7 +172,7 @@ export function Scatter() {
     const dt = Math.min(delta, 0.1)
     const now = state.clock.elapsedTime
 
-    const activePoints: THREE.Vector3[] = []
+    const activePoints: { pt: THREE.Vector3; speed: number }[] = []
     if (data.is_tracking) {
       const targets = [
         { key: 'lf', pt: toWorld(data.left_foot) },
@@ -182,18 +182,22 @@ export function Scatter() {
       ]
       targets.forEach(({ key, pt }) => {
         if (pt) {
-          const smoothLerp = 1.0 - Math.exp(-24.0 * dt)
+          const smoothLerp = 1.0 - Math.exp(-22.0 * dt)
+          const prev = smoothedPoints.current[key].clone()
           smoothedPoints.current[key].lerp(pt, smoothLerp)
-          activePoints.push(smoothedPoints.current[key])
+          const curr = smoothedPoints.current[key]
+          const distMoved = curr.distanceTo(prev)
+          const speed = distMoved / Math.max(dt, 0.001)
+          activePoints.push({ pt: curr, speed })
         }
       })
     }
 
     // Tuning parameters per preset
-    const repulsionRadius = preset === 'snowflakes' ? 2.4 : preset === 'coins' ? 1.6 : 2.1
-    const kickForce = preset === 'coins' ? 16 : preset === 'snowflakes' ? 7 : 13
-    const drag = preset === 'coins' ? 0.92 : preset === 'snowflakes' ? 0.96 : 0.94
-    const gravityY = preset === 'snowflakes' ? -0.4 : preset === 'petals' ? -0.2 : 0.0
+    const repulsionRadius = preset === 'snowflakes' ? 2.0 : preset === 'coins' ? 1.4 : 1.8
+    const baseKick = preset === 'coins' ? 10 : preset === 'snowflakes' ? 5 : 8
+    const drag = preset === 'coins' ? 0.90 : preset === 'snowflakes' ? 0.96 : 0.93
+    const gravityY = preset === 'snowflakes' ? -0.35 : preset === 'petals' ? -0.18 : 0.0
 
     const mesh = instancedMeshRef.current
     if (!mesh) return
@@ -204,26 +208,34 @@ export function Scatter() {
       // Ambient drift per preset
       if (preset === 'snowflakes') {
         item.vel.y += gravityY * dt
-        item.vel.x += Math.sin(now * 1.5 + i) * 0.4 * dt
+        item.vel.x += Math.sin(now * 1.5 + i) * 0.35 * dt
       } else if (preset === 'petals') {
         item.vel.y += gravityY * dt
-        item.vel.x += Math.cos(now * 1.2 + i * 2) * 0.3 * dt
+        item.vel.x += Math.cos(now * 1.2 + i * 2) * 0.25 * dt
       }
 
-      // Repulsion from tracked limbs
-      activePoints.forEach((pt) => {
+      // Interaction from tracked limbs: velocity-dependent kick + soft static parting
+      activePoints.forEach(({ pt, speed }) => {
         const dist = item.pos.distanceTo(pt)
-        if (dist < repulsionRadius) {
+        if (dist < repulsionRadius && dist > 0.001) {
           const forceDir = item.pos.clone().sub(pt).normalize()
-          const intensity = (1.0 - dist / repulsionRadius) * kickForce
-          item.vel.addScaledVector(forceDir, intensity * dt)
-          item.rotVel += randomRange(-6, 6) * (1.0 - dist / repulsionRadius)
+          const proximity = (1.0 - dist / repulsionRadius)
+
+          if (speed > 1.2) {
+            // Intentional kick
+            const kickImpulse = proximity * Math.min(speed * 0.6, 6.0) * baseKick
+            item.vel.addScaledVector(forceDir, kickImpulse * dt)
+            item.rotVel += randomRange(-4, 4) * proximity
+          } else {
+            // Gentle static separation (soft nudge so items don't overlap feet)
+            item.pos.addScaledVector(forceDir, proximity * 0.4 * dt)
+          }
         }
       })
 
       // Drag & velocity update
       item.vel.multiplyScalar(drag)
-      item.rotVel *= 0.93
+      item.rotVel *= 0.92
       item.pos.addScaledVector(item.vel, dt)
       item.rot += item.rotVel * dt
 

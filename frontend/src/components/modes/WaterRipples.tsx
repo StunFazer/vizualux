@@ -188,9 +188,14 @@ export function WaterRipples() {
     wavesUniform[idx].set(x, 1.0 - y, time, Math.min(strength, 2.5))
   }
 
+  const lastRippleTimes = useRef<{ [key: string]: number }>({
+    lh: 0, rh: 0, lf: 0, rf: 0
+  })
+
   useFrame((state, delta) => {
     const data = trackingDataRef.current
     const now = state.clock.elapsedTime
+    const dt = Math.min(delta, 0.05)
 
     if (matRef.current) {
       matRef.current.uniforms.u_time.value = now
@@ -201,10 +206,10 @@ export function WaterRipples() {
 
     if (data.is_tracking) {
       const points = [
-        { key: 'lf', pt: data.left_foot, weight: 1.4 },
-        { key: 'rf', pt: data.right_foot, weight: 1.4 },
-        { key: 'lh', pt: data.left_hand, weight: 0.9 },
-        { key: 'rh', pt: data.right_hand, weight: 0.9 },
+        { key: 'lf', pt: data.left_foot, weight: 1.2 },
+        { key: 'rf', pt: data.right_foot, weight: 1.2 },
+        { key: 'lh', pt: data.left_hand, weight: 0.8 },
+        { key: 'rh', pt: data.right_hand, weight: 0.8 },
       ]
 
       points.forEach(({ key, pt, weight }) => {
@@ -214,7 +219,7 @@ export function WaterRipples() {
         }
 
         // Smooth position using exponential damping
-        const smoothFactor = Math.min(1.0, delta * 18.0)
+        const smoothFactor = Math.min(1.0, dt * 16.0)
         smoothedPositions.current[key].x += (pt.x - smoothedPositions.current[key].x) * smoothFactor
         smoothedPositions.current[key].y += (pt.y - smoothedPositions.current[key].y) * smoothFactor
 
@@ -226,17 +231,21 @@ export function WaterRipples() {
           const dx = sx - prev.x
           const dy = sy - prev.y
           const dist = Math.hypot(dx, dy)
-          const speed = dist / Math.max(delta, 0.001)
+          const speed = dist / Math.max(dt, 0.001)
 
-          // Ripple trigger on movement or footsteps
-          if (dist > 0.015) {
-            const rippleStrength = Math.min(2.5, (speed * 0.8 + 0.3) * weight)
+          // Ripple trigger: requires deliberate movement (dist > 0.04) and step cooldown
+          if (dist > 0.04 && speed > 0.15 && (now - lastRippleTimes.current[key] > 0.22)) {
+            lastRippleTimes.current[key] = now
+            const rippleStrength = Math.min(1.6, (speed * 0.5 + 0.35) * weight)
             addRipple(sx, sy, now, rippleStrength)
             prevPositions.current[key] = { x: sx, y: sy }
           }
         } else {
-          // New contact point splash
-          addRipple(sx, sy, now, 1.2 * weight)
+          // New contact point splash with cooldown
+          if (now - lastRippleTimes.current[key] > 0.3) {
+            lastRippleTimes.current[key] = now
+            addRipple(sx, sy, now, 0.9 * weight)
+          }
           prevPositions.current[key] = { x: sx, y: sy }
         }
       })

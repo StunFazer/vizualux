@@ -81,22 +81,103 @@ function App() {
               </svg>
             )}
 
-            {/* Manual Alignment Fallback (Step -1 or completed): 4 High-Visibility Corner Squares */}
-            {(calibrationStep < 0 || calibrationStep > 4) && (
-              <>
-                <div style={{ position: 'absolute', top: 0, left: 0, width: '20vmin', height: '20vmin', background: '#ef4444', border: '6px solid #ffffff', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '2.5vmin' }}>TL (Red)</span>
+            {/* Step 10: ArUco 4x4 Marker Display Mode */}
+            {calibrationStep === 10 && (
+              <div style={{ position: 'relative', width: '100%', height: '100%', backgroundColor: '#ffffff' }}>
+                {/* ArUco Marker 0: Top-Left */}
+                <div style={{ position: 'absolute', top: '4vmin', left: '4vmin', width: '22vmin', height: '22vmin', background: '#000', padding: '2vmin', boxSizing: 'border-box' }}>
+                  <div style={{ width: '100%', height: '100%', background: '#fff', display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gridTemplateRows: 'repeat(6, 1fr)' }}>
+                    {/* Standard DICT_4X4_50 marker 0 layout */}
+                    <div style={{ gridColumn: '2 / 4', gridRow: '2 / 4', background: '#000' }} />
+                    <div style={{ gridColumn: '4 / 6', gridRow: '3 / 5', background: '#000' }} />
+                  </div>
                 </div>
-                <div style={{ position: 'absolute', top: 0, right: 0, width: '20vmin', height: '20vmin', background: '#3b82f6', border: '6px solid #ffffff', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '2.5vmin' }}>TR (Blue)</span>
+                {/* ArUco Marker 1: Top-Right */}
+                <div style={{ position: 'absolute', top: '4vmin', right: '4vmin', width: '22vmin', height: '22vmin', background: '#000', padding: '2vmin', boxSizing: 'border-box' }}>
+                  <div style={{ width: '100%', height: '100%', background: '#fff', display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gridTemplateRows: 'repeat(6, 1fr)' }}>
+                    <div style={{ gridColumn: '3 / 5', gridRow: '2 / 4', background: '#000' }} />
+                    <div style={{ gridColumn: '2 / 4', gridRow: '4 / 6', background: '#000' }} />
+                  </div>
                 </div>
-                <div style={{ position: 'absolute', bottom: 0, right: 0, width: '20vmin', height: '20vmin', background: '#22c55e', border: '6px solid #ffffff', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '2.5vmin' }}>BR (Green)</span>
+                {/* ArUco Marker 2: Bottom-Right */}
+                <div style={{ position: 'absolute', bottom: '4vmin', right: '4vmin', width: '22vmin', height: '22vmin', background: '#000', padding: '2vmin', boxSizing: 'border-box' }}>
+                  <div style={{ width: '100%', height: '100%', background: '#fff', display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gridTemplateRows: 'repeat(6, 1fr)' }}>
+                    <div style={{ gridColumn: '2 / 5', gridRow: '2 / 3', background: '#000' }} />
+                    <div style={{ gridColumn: '3 / 5', gridRow: '4 / 6', background: '#000' }} />
+                  </div>
                 </div>
-                <div style={{ position: 'absolute', bottom: 0, left: 0, width: '20vmin', height: '20vmin', background: '#eab308', border: '6px solid #ffffff', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '2.5vmin' }}>BL (Yellow)</span>
+                {/* ArUco Marker 3: Bottom-Left */}
+                <div style={{ position: 'absolute', bottom: '4vmin', left: '4vmin', width: '22vmin', height: '22vmin', background: '#000', padding: '2vmin', boxSizing: 'border-box' }}>
+                  <div style={{ width: '100%', height: '100%', background: '#fff', display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gridTemplateRows: 'repeat(6, 1fr)' }}>
+                    <div style={{ gridColumn: '2 / 4', gridRow: '2 / 5', background: '#000' }} />
+                    <div style={{ gridColumn: '4 / 6', gridRow: '3 / 6', background: '#000' }} />
+                  </div>
                 </div>
-              </>
+                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: '#000', fontSize: '3vmin', fontWeight: 'bold' }}>
+                  ArUco Marker Calibration Mode
+                </div>
+              </div>
+            )}
+
+            {/* Manual Alignment Mode (Step -1 or completed): High-Visibility Checkerboard Grid + Color-Coded Targets */}
+            {(calibrationStep < 0 || calibrationStep > 4) && calibrationStep !== 10 && (
+              <div style={{ position: 'relative', width: '100%', height: '100%', backgroundColor: '#05070f' }}>
+                {/* Full-Screen Alignment Grid SVG */}
+                <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0 }}>
+                  <defs>
+                    <pattern id="calib-grid" width="10%" height="10%" patternUnits="userSpaceOnUse">
+                      <rect width="100%" height="100%" fill="none" stroke="rgba(255, 255, 255, 0.08)" strokeWidth="1" />
+                    </pattern>
+                  </defs>
+                  <rect width="100%" height="100%" fill="url(#calib-grid)" />
+
+                  {/* Diagonal perspective guide lines */}
+                  <line x1="0" y1="0" x2="100%" y2="100%" stroke="rgba(0, 245, 255, 0.15)" strokeWidth="1.5" strokeDasharray="6 4" />
+                  <line x1="100%" y1="0" x2="0" y2="100%" stroke="rgba(0, 245, 255, 0.15)" strokeWidth="1.5" strokeDasharray="6 4" />
+
+                  {/* Outer Viewport Calibration Border */}
+                  <rect x="2" y="2" width="calc(100% - 4px)" height="calc(100% - 4px)" fill="none" stroke="#00f5ff" strokeWidth="4" />
+
+                  {/* Center Crosshair & Concentric Leveling Rings */}
+                  <circle cx="50%" cy="50%" r="4%" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="1.5" />
+                  <circle cx="50%" cy="50%" r="8%" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="1" />
+                  <circle cx="50%" cy="50%" r="16%" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1" />
+                  <line x1="45%" y1="50%" x2="55%" y2="50%" stroke="#ffffff" strokeWidth="2" />
+                  <line x1="50%" y1="45%" x2="50%" y2="55%" stroke="#ffffff" strokeWidth="2" />
+                </svg>
+
+                {/* Top-Left Target (Red) */}
+                <div style={{ position: 'absolute', top: 0, left: 0, width: '22vmin', height: '22vmin', borderBottomRightRadius: '16px', background: 'rgba(239, 68, 68, 0.92)', border: '4px solid #ffffff', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 30px rgba(239, 68, 68, 0.8)' }}>
+                  <div style={{ width: '4vmin', height: '4vmin', borderRadius: '50%', border: '3px solid #fff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '4px' }}>
+                    <div style={{ width: '1vmin', height: '1vmin', borderRadius: '50%', background: '#fff' }} />
+                  </div>
+                  <span style={{ color: '#fff', fontWeight: 800, fontSize: '2.4vmin', letterSpacing: '1px' }}>TL 1 (RED)</span>
+                </div>
+
+                {/* Top-Right Target (Blue) */}
+                <div style={{ position: 'absolute', top: 0, right: 0, width: '22vmin', height: '22vmin', borderBottomLeftRadius: '16px', background: 'rgba(59, 130, 246, 0.92)', border: '4px solid #ffffff', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 30px rgba(59, 130, 246, 0.8)' }}>
+                  <div style={{ width: '4vmin', height: '4vmin', borderRadius: '50%', border: '3px solid #fff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '4px' }}>
+                    <div style={{ width: '1vmin', height: '1vmin', borderRadius: '50%', background: '#fff' }} />
+                  </div>
+                  <span style={{ color: '#fff', fontWeight: 800, fontSize: '2.4vmin', letterSpacing: '1px' }}>TR 2 (BLUE)</span>
+                </div>
+
+                {/* Bottom-Right Target (Green) */}
+                <div style={{ position: 'absolute', bottom: 0, right: 0, width: '22vmin', height: '22vmin', borderTopLeftRadius: '16px', background: 'rgba(16, 185, 129, 0.92)', border: '4px solid #ffffff', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 30px rgba(16, 185, 129, 0.8)' }}>
+                  <div style={{ width: '4vmin', height: '4vmin', borderRadius: '50%', border: '3px solid #fff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '4px' }}>
+                    <div style={{ width: '1vmin', height: '1vmin', borderRadius: '50%', background: '#fff' }} />
+                  </div>
+                  <span style={{ color: '#fff', fontWeight: 800, fontSize: '2.4vmin', letterSpacing: '1px' }}>BR 3 (GREEN)</span>
+                </div>
+
+                {/* Bottom-Left Target (Yellow) */}
+                <div style={{ position: 'absolute', bottom: 0, left: 0, width: '22vmin', height: '22vmin', borderTopRightRadius: '16px', background: 'rgba(245, 158, 11, 0.92)', border: '4px solid #ffffff', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 30px rgba(245, 158, 11, 0.8)' }}>
+                  <div style={{ width: '4vmin', height: '4vmin', borderRadius: '50%', border: '3px solid #fff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '4px' }}>
+                    <div style={{ width: '1vmin', height: '1vmin', borderRadius: '50%', background: '#fff' }} />
+                  </div>
+                  <span style={{ color: '#fff', fontWeight: 800, fontSize: '2.4vmin', letterSpacing: '1px' }}>BL 4 (YELLOW)</span>
+                </div>
+              </div>
             )}
           </div>
         )}

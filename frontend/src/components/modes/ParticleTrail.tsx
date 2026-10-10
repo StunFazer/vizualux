@@ -102,10 +102,18 @@ export function ParticleTrail() {
     p.twinklePhase = randomRange(0, Math.PI * 2)
   }
 
+  // Smoothed speeds and burst cooldowns per limb
+  const smoothedSpeeds = useRef<{ [key: string]: number }>({
+    lh: 0, rh: 0, lf: 0, rf: 0
+  })
+  const lastBurstTimes = useRef<{ [key: string]: number }>({
+    lh: 0, rh: 0, lf: 0, rf: 0
+  })
+
   useFrame((state, delta) => {
     const data = trackingDataRef.current
     const now = state.clock.elapsedTime
-    const dt = Math.min(delta, 0.1) // clamp delta against hitching
+    const dt = Math.min(delta, 0.05) // clamp delta against hitching
 
     const targets = [
       { key: 'lf', pt: toWorld(data.left_foot) },
@@ -118,21 +126,33 @@ export function ParticleTrail() {
     targets.forEach(({ key, pt }) => {
       if (!pt) {
         prevPoints.current[key] = null
+        smoothedSpeeds.current[key] = 0
         return
       }
 
       // Smooth point using exponential lerp
-      const smoothLerp = 1.0 - Math.exp(-22.0 * dt)
+      const smoothLerp = 1.0 - Math.exp(-20.0 * dt)
       smoothedPoints.current[key].lerp(pt, smoothLerp)
       const currentPt = smoothedPoints.current[key]
 
       const prev = prevPoints.current[key]
-      let speed = 0
+      let dist = 0
+      let rawSpeed = 0
       if (prev) {
-        const dist = currentPt.distanceTo(prev)
-        speed = dist / Math.max(dt, 0.001)
+        dist = currentPt.distanceTo(prev)
+        rawSpeed = dist / Math.max(dt, 0.001)
       }
       prevPoints.current[key] = currentPt.clone()
+
+      // Low-pass filter on speed to eliminate micro-jitter spikes
+      const speedFilter = 1.0 - Math.exp(-12.0 * dt)
+      smoothedSpeeds.current[key] += (rawSpeed - smoothedSpeeds.current[key]) * speedFilter
+      const speed = smoothedSpeeds.current[key]
+
+      // Noise deadzone: ignore micro-tremor under 0.035 units
+      if (dist < 0.035 && speed < 0.6) {
+        return
+      }
 
       // Determine palette color based on current style
       const getColor = (offset: number) => {
@@ -156,49 +176,51 @@ export function ParticleTrail() {
         return c
       }
 
-      // Spawn continuous trail ribbon particles
-      for (let i = 0; i < 2; i++) {
+      // Spawn continuous trail ribbon particles only when in active movement
+      const spawnCount = speed > 1.0 ? 2 : 1
+      for (let i = 0; i < spawnCount; i++) {
         const offset = new THREE.Vector3(
-          randomRange(-0.12, 0.12),
-          randomRange(-0.12, 0.12),
+          randomRange(-0.08, 0.08),
+          randomRange(-0.08, 0.08),
           0
         )
         const vel = new THREE.Vector3(
-          randomRange(-0.4, 0.4),
-          randomRange(-0.4, 0.4),
+          randomRange(-0.3, 0.3),
+          randomRange(-0.3, 0.3),
           0
         )
         const col = getColor(i * 0.05)
-        const life = trailStyle === 'fireflies' ? 1.8 : 1.2
+        const life = trailStyle === 'fireflies' ? 1.6 : 1.1
         spawnParticle(
           currentPt.clone().add(offset),
           vel,
           col,
-          randomRange(0.35, 0.55) * userScale,
+          randomRange(0.35, 0.5) * userScale,
           life,
           false
         )
       }
 
-      // If moving rapidly, spawn sparkle bursts!
-      if (speed > 1.2) {
-        const burstCount = Math.min(6, Math.ceil(speed * 1.5))
+      // Trigger sparkle bursts ONLY on intentional deliberate gestures (speed > 4.0) with cooldown
+      if (enableTwinkle && speed > 4.0 && (now - lastBurstTimes.current[key]) > 0.22) {
+        lastBurstTimes.current[key] = now
+        const burstCount = Math.min(4, Math.max(2, Math.floor(speed * 0.7)))
         for (let b = 0; b < burstCount; b++) {
           const sparkVel = new THREE.Vector3(
-            randomRange(-1.2, 1.2),
-            randomRange(0.4, 1.8), // float upward like twinkling fairy dust
+            randomRange(-0.8, 0.8),
+            randomRange(0.4, 1.2), // gentle float upward
             0
           )
-          const sparkCol = enableTwinkle && Math.random() < 0.5
+          const sparkCol = Math.random() < 0.5
             ? new THREE.Color('#ffffff') // bright twinkle star
             : getColor(b * 0.1)
 
           spawnParticle(
-            currentPt.clone().add(new THREE.Vector3(randomRange(-0.25, 0.25), randomRange(-0.25, 0.25), 0)),
+            currentPt.clone().add(new THREE.Vector3(randomRange(-0.15, 0.15), randomRange(-0.15, 0.15), 0)),
             sparkVel,
             sparkCol,
-            randomRange(0.45, 0.75) * userScale,
-            randomRange(0.7, 1.4),
+            randomRange(0.4, 0.65) * userScale,
+            randomRange(0.7, 1.2),
             true
           )
         }
