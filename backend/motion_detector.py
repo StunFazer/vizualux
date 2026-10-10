@@ -31,7 +31,7 @@ class MotionDetector:
             "right_foot": None,
         }
         
-        if self.prev_gray is None:
+        if self.prev_gray is None or self.prev_gray.shape != gray.shape:
             self.prev_gray = gray
             return data
         
