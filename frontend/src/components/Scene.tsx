@@ -8,8 +8,6 @@ import { MotionReveal } from './modes/MotionReveal'
 import { SilhouetteFX } from './modes/SilhouetteFX'
 import { CosmicNebula } from './modes/CosmicNebula'
 import { NeonGrid } from './modes/NeonGrid'
-import { ElectricPlasma } from './modes/ElectricPlasma'
-import { LavaEmbers } from './modes/LavaEmbers'
 import { Environment } from '@react-three/drei'
 
 export function Scene() {
@@ -55,14 +53,6 @@ export function Scene() {
 
           {currentMode === 'NeonGrid' && (
             <NeonGrid />
-          )}
-
-          {currentMode === 'ElectricPlasma' && (
-            <ElectricPlasma />
-          )}
-
-          {currentMode === 'LavaEmbers' && (
-            <LavaEmbers />
           )}
         </Suspense>
       </Canvas>

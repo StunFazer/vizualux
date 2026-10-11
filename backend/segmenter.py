@@ -6,7 +6,7 @@ class BackgroundSegmenter:
     OpenCV MOG2 background subtractor for segmenting arbitrary moving subjects and objects.
     Applies morphological filtering and dynamic projection area masking to eliminate optical feedback loops.
     """
-    def __init__(self, history=500, var_threshold=25, detect_shadows=False):
+    def __init__(self, history=400, var_threshold=16, detect_shadows=False):
         self.subtractor = cv2.createBackgroundSubtractorMOG2(
             history=history,
             varThreshold=var_threshold,
@@ -17,7 +17,7 @@ class BackgroundSegmenter:
         self.projection_corners = None
         self._cached_poly = None
         self._cached_shape = None
-        self.min_blob_area = 150  # Filter out transient particle sparks
+        self.min_blob_area = 50  # Sensitive detection for limbs, feet, and bodies
 
     def set_projection_corners(self, corners):
         """

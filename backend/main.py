@@ -162,10 +162,11 @@ async def capture_loop(debug_mode=False):
         # Handle segmentation stream when Silhouette FX is active
         if segmentation_enabled:
             mask_to_send = None
-            if segmentation_engine == "human":
-                if "segmentation_mask" in latest_data and latest_data["segmentation_mask"] is not None:
-                    mask_to_send = latest_data["segmentation_mask"]
-            else:
+            if segmentation_engine == "human" and "segmentation_mask" in latest_data and latest_data["segmentation_mask"] is not None:
+                mask_to_send = latest_data["segmentation_mask"]
+            
+            # If human segmentation is empty or in object mode, seamlessly fallback to background segmenter
+            if mask_to_send is None:
                 mask_to_send = bg_segmenter.process_frame(frame, target_size=target_size)
             
             if mask_to_send is not None:

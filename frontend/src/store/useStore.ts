@@ -8,8 +8,6 @@ export type AppMode =
   | 'SilhouetteFX'
   | 'CosmicNebula'
   | 'NeonGrid'
-  | 'ElectricPlasma'
-  | 'LavaEmbers'
 
 export interface Point2D {
   x: number

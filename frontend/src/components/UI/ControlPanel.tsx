@@ -207,40 +207,6 @@ export function ControlPanel() {
         >
           Cyberpunk Neon Grid
         </button>
-
-        <button 
-          onClick={() => setMode('ElectricPlasma')}
-          style={{
-            padding: '10px 15px',
-            backgroundColor: currentMode === 'ElectricPlasma' ? '#a855f7' : 'rgba(255,255,255,0.1)',
-            border: currentMode === 'ElectricPlasma' ? '1px solid #c084fc' : 'none',
-            borderRadius: '6px',
-            color: 'white',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            textAlign: 'left',
-            fontWeight: currentMode === 'ElectricPlasma' ? 'bold' : 'normal'
-          }}
-        >
-          Tesla Electric Plasma
-        </button>
-
-        <button 
-          onClick={() => setMode('LavaEmbers')}
-          style={{
-            padding: '10px 15px',
-            backgroundColor: currentMode === 'LavaEmbers' ? '#ea580c' : 'rgba(255,255,255,0.1)',
-            border: currentMode === 'LavaEmbers' ? '1px solid #fb923c' : 'none',
-            borderRadius: '6px',
-            color: 'white',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            textAlign: 'left',
-            fontWeight: currentMode === 'LavaEmbers' ? 'bold' : 'normal'
-          }}
-        >
-          Volcanic Magma & Embers
-        </button>
       </div>
 
       {/* Silhouette FX Contextual Controls */}
